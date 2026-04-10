@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTH ──────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  phone         String?
+  bio           String?
+  role          String    @default("GUEST")   // GUEST | HOST | ADMIN
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  properties        Property[]
+  bookingsAsGuest   Booking[]      @relation("GuestBookings")
+  reviewsGiven      Review[]       @relation("ReviewsGiven")
+  reviewsReceived   Review[]       @relation("ReviewsReceived")
+  notifications     Notification[]
+  savedProperties   SavedProperty[]
+  offersSent        Offer[]        @relation("OfferSender")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── PROPERTIES ────────────────────────────────────────────────────────────
+
+model Property {
+  id            String   @id @default(cuid())
+  title         String
+  description   String
+  propertyType  String   // VILLA | GUESTHOUSE | HOTEL | BUNGALOW | APARTMENT | TREEHOUSE | BEACH_HUT | ECO_LODGE
+  status        String   @default("DRAFT")   // DRAFT | ACTIVE | INACTIVE | SUSPENDED
+
+  address       String
+  district      String
+  latitude      Float
+  longitude     Float
+
+  pricePerNight Float
+  minPrice      Float
+  currency      String   @default("USD")
+
+  maxGuests     Int
+  bedrooms      Int
+  bathrooms     Int
+  beds          Int
+
+  hostId        String
+  host          User     @relation(fields: [hostId], references: [id])
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  images        PropertyImage[]
+  amenities     PropertyAmenity[]
+  bookings      Booking[]
+  reviews       Review[]
+  savedBy       SavedProperty[]
+  availability  Availability[]
+}
+
+model PropertyImage {
+  id         String   @id @default(cuid())
+  propertyId String
+  url        String
+  alt        String?
+  isPrimary  Boolean  @default(false)
+  order      Int      @default(0)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+}
+
+model PropertyAmenity {
+  id         String   @id @default(cuid())
+  propertyId String
+  name       String
+  icon       String?
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+}
+
+model Availability {
+  id         String   @id @default(cuid())
+  propertyId String
+  date       DateTime
+  isBlocked  Boolean  @default(false)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, date])
+}
+
+model SavedProperty {
+  id         String   @id @default(cuid())
+  userId     String
+  propertyId String
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+}
+
+// ─── BOOKINGS & NEGOTIATION ────────────────────────────────────────────────
+
+model Booking {
+  id         String   @id @default(cuid())
+  propertyId String
+  guestId    String
+  checkIn    DateTime
+  checkOut   DateTime
+  guests     Int
+  status     String   @default("PENDING_OFFER")  // PENDING_OFFER | COUNTERED | ACCEPTED | REJECTED | CANCELLED | COMPLETED
+  totalPrice Float?
+  nights     Int
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  property   Property @relation(fields: [propertyId], references: [id])
+  guest      User     @relation("GuestBookings", fields: [guestId], references: [id])
+  offers     Offer[]
+  review     Review?
+}
+
+model Offer {
+  id        String   @id @default(cuid())
+  bookingId String
+  senderId  String
+  amount    Float
+  message   String?
+  type      String   // INITIAL_OFFER | COUNTER_OFFER | ACCEPTANCE | REJECTION
+  createdAt DateTime @default(now())
+
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sender    User     @relation("OfferSender", fields: [senderId], references: [id])
+}
+
+// ─── REVIEWS ───────────────────────────────────────────────────────────────
+
+model Review {
+  id          String   @id @default(cuid())
+  propertyId  String
+  bookingId   String   @unique
+  authorId    String
+  hostId      String
+  rating      Int
+  cleanliness Int
+  accuracy    Int
+  location    Int
+  value       Int
+  comment     String
+  hostReply   String?
+  createdAt   DateTime @default(now())
+
+  property    Property @relation(fields: [propertyId], references: [id])
+  booking     Booking  @relation(fields: [bookingId], references: [id])
+  author      User     @relation("ReviewsGiven", fields: [authorId], references: [id])
+  host        User     @relation("ReviewsReceived", fields: [hostId], references: [id])
+}
+
+// ─── NOTIFICATIONS ──────────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // BOOKING_REQUEST | OFFER_RECEIVED | COUNTER_OFFER | BOOKING_ACCEPTED | BOOKING_REJECTED | BOOKING_CANCELLED | REVIEW_RECEIVED | SYSTEM
+  title     String
+  message   String
+  data      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

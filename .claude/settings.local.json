@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma:*)",
+      "Bash(mkdir -p /c/AutomationDI/TryOuts/ahangama/src/app/api/properties/\\\\[id\\\\]/reviews)",
+      "Bash(mkdir -p /c/AutomationDI/TryOuts/ahangama/src/app/api/bookings/\\\\[id\\\\]/offers)",
+      "Bash(mkdir -p /c/AutomationDI/TryOuts/ahangama/src/app/api/users/\\\\[id\\\\])",
+      "Bash(mkdir -p \"/c/AutomationDI/TryOuts/ahangama/src/app/\\(main\\)/properties/[id]\")",
+      "Bash(mkdir -p \"/c/AutomationDI/TryOuts/ahangama/src/app/\\(main\\)/bookings/[id]\")",
+      "Bash(npm run:*)",
+      "Bash(node node_modules/esbuild/install.js)",
+      "Bash(cmd:*)",
+      "Bash(node:*)",
+      "Bash(curl -s http://localhost:3000/api/properties)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s \"http://localhost:3000/api/properties?district=Galle\")",
+      "Bash(curl -v \"http://localhost:3000/api/properties?district=Galle\")"
+    ]
+  }
+}
