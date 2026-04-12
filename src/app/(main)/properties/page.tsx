@@ -10,6 +10,7 @@ interface SearchParams {
   maxPrice?: string;
   guests?: string;
   propertyType?: string;
+  category?: string;
   page?: string;
 }
 
@@ -48,9 +49,11 @@ export default async function PropertiesPage({ searchParams }: Props) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                {params.district ? `${params.district}, Sri Lanka` : "All Properties in Sri Lanka"}
+                {params.category === "TRANSPORT"
+                  ? params.district ? `Transport in ${params.district}` : "Transport in Sri Lanka"
+                  : params.district ? `Stays in ${params.district}` : params.category === "STAY" ? "Stays in Sri Lanka" : "All Listings in Sri Lanka"}
               </h1>
-              <p className="text-gray-500 text-sm mt-1">{total} properties found</p>
+              <p className="text-gray-500 text-sm mt-1">{total} listings found</p>
             </div>
           </div>
 

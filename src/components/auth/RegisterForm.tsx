@@ -15,6 +15,7 @@ export default function RegisterForm() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,15 +29,36 @@ export default function RegisterForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Registration failed");
-      await signIn("credentials", { email, password, redirect: false });
-      router.push(role === "HOST" ? "/dashboard/host" : "/");
-      router.refresh();
+      setSuccess(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Registration failed");
     } finally {
       setLoading(false);
     }
   };
+
+  if (success) {
+    return (
+      <div className="text-center py-8 space-y-4">
+        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+          <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-gray-900">Account Created!</h2>
+        <p className="text-gray-500 text-sm leading-relaxed">
+          Your account has been submitted for review. An admin will approve your account shortly.
+          You will be able to log in once approved.
+        </p>
+        <Link
+          href="/login"
+          className="inline-block mt-4 px-6 py-3 bg-teal-600 text-white rounded-xl font-semibold hover:bg-teal-700 transition-colors text-sm"
+        >
+          Go to Login
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">

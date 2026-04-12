@@ -85,12 +85,15 @@ model Property {
 
   pricePerNight Float
   minPrice      Float
+  pricePerKm    Float?   // Transport only: per-kilometer charge
   currency      String   @default("USD")
 
   maxGuests     Int
   bedrooms      Int
   bathrooms     Int
   beds          Int
+
+  category      String   @default("STAY")   // STAY | TRANSPORT
 
   hostId        String
   host          User     @relation(fields: [hostId], references: [id])

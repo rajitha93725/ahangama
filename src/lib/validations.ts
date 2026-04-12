@@ -19,6 +19,7 @@ export const PropertySchema = z.object({
     "VILLA", "GUESTHOUSE", "HOTEL", "BUNGALOW",
     "APARTMENT", "TREEHOUSE", "BEACH_HUT", "ECO_LODGE",
   ]),
+  category: z.enum(["STAY", "TRANSPORT"]).default("STAY"),
   address: z.string().min(5),
   district: z.string().min(1, "District is required"),
   latitude: z.number().min(-90).max(90),
@@ -29,6 +30,25 @@ export const PropertySchema = z.object({
   bedrooms: z.number().int().min(0).max(50),
   bathrooms: z.number().int().min(0).max(50),
   beds: z.number().int().min(1).max(100),
+  amenities: z.array(z.string()).optional(),
+});
+
+export const TransportSchema = z.object({
+  title: z.string().min(5, "Title must be at least 5 characters").max(100),
+  description: z.string().min(10, "Description must be at least 10 characters").max(2000),
+  propertyType: z.enum(["CAR", "VAN", "TUK_TUK", "BUS", "BOAT", "MOTORBIKE", "JEEP", "BICYCLE"]),
+  category: z.literal("TRANSPORT"),
+  address: z.string().min(5),
+  district: z.string().min(1, "District is required"),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  pricePerNight: z.number().min(0, "Parking charge must be at least $0"),  // per-night parking charge
+  pricePerKm: z.number().min(0, "Per km charge must be at least $0"),
+  minPrice: z.number().min(1, "Minimum price must be at least $1"),
+  maxGuests: z.number().int().min(1).max(20),
+  bedrooms: z.number().int().min(0).max(0).default(0),
+  bathrooms: z.number().int().min(0).max(0).default(0),
+  beds: z.number().int().min(0).max(0).default(0),
   amenities: z.array(z.string()).optional(),
 });
 
@@ -79,6 +99,7 @@ export const ProfileUpdateSchema = z.object({
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type PropertyInput = z.infer<typeof PropertySchema>;
+export type TransportInput = z.infer<typeof TransportSchema>;
 export type SearchInput = z.infer<typeof SearchSchema>;
 export type BookingRequestInput = z.infer<typeof BookingRequestSchema>;
 export type OfferInput = z.infer<typeof OfferSchema>;

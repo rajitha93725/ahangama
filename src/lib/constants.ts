@@ -57,6 +57,17 @@ export const PROPERTY_TYPES = [
   { value: "ECO_LODGE", label: "Eco Lodge" },
 ] as const;
 
+export const TRANSPORT_TYPES = [
+  { value: "CAR", label: "Car" },
+  { value: "VAN", label: "Van / Minivan" },
+  { value: "TUK_TUK", label: "Tuk-Tuk" },
+  { value: "BUS", label: "Bus / Minibus" },
+  { value: "BOAT", label: "Boat" },
+  { value: "MOTORBIKE", label: "Motorbike" },
+  { value: "JEEP", label: "Jeep / 4WD" },
+  { value: "BICYCLE", label: "Bicycle" },
+] as const;
+
 export const BOOKING_STATUS_LABELS: Record<string, string> = {
   PENDING_OFFER: "Awaiting Response",
   COUNTERED: "Counter Offer Received",

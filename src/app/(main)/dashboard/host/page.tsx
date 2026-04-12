@@ -108,8 +108,10 @@ export default async function HostDashboard() {
                     </p>
                   </div>
                   <span className={`self-start px-2 py-0.5 rounded-full text-xs font-medium ${
-                    p.status === "ACTIVE" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                  }`}>{p.status}</span>
+                    p.status === "ACTIVE" ? "bg-green-100 text-green-700" :
+                    p.status === "PENDING_APPROVAL" ? "bg-orange-100 text-orange-700" :
+                    "bg-gray-100 text-gray-600"
+                  }`}>{p.status === "PENDING_APPROVAL" ? "Pending" : p.status}</span>
                 </Link>
               ))}
             </div>

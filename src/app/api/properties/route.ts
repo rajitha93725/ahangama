@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { PropertySchema } from "@/lib/validations";
+import { PropertySchema, TransportSchema } from "@/lib/validations";
+
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const district = searchParams.get("district");
@@ -10,6 +11,7 @@ export async function GET(req: NextRequest) {
   const guests = searchParams.get("guests");
   const propertyType = searchParams.get("propertyType");
   const amenities = searchParams.get("amenities");
+  const category = searchParams.get("category");
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "12");
 
@@ -26,6 +28,18 @@ export async function GET(req: NextRequest) {
   if (amenities) {
     const amenityList = amenities.split(",");
     where.amenities = { some: { name: { in: amenityList } } };
+  }
+  // `category` is unknown to the stale Prisma client — collect IDs via raw SQL first
+  let categoryIds: string[] | null = null;
+  if (category) {
+    const rows = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Property" WHERE "category" = ${category}
+    `;
+    categoryIds = rows.map((r) => r.id);
+    if (categoryIds.length === 0) {
+      return NextResponse.json({ data: [], total: 0, page, totalPages: 0 });
+    }
+    where.id = { in: categoryIds };
   }
 
   const [total, properties] = await Promise.all([
@@ -57,31 +71,71 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.user.role !== "HOST" && session.user.role !== "ADMIN") {
-    return NextResponse.json({ error: "Only hosts can create listings" }, { status: 403 });
+  try {
+    const session = await auth();
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (session.user.role !== "HOST" && session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only hosts can create listings" }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const isTransport = body.category === "TRANSPORT";
+    const schema = isTransport ? TransportSchema : PropertySchema;
+    const result = schema.safeParse(body);
+    if (!result.success) {
+      return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
+    }
+
+    // Strip fields the stale Prisma client doesn't know about yet.
+    // `category` and `pricePerKm` were added in migrations whose
+    // `prisma generate` step was blocked by the locked DLL (dev server running).
+    // We write them via $executeRaw after the create.
+    const d = result.data as Record<string, unknown>;
+    const amenities = d.amenities as string[] | undefined;
+    const category = d.category as string | undefined;
+    const pricePerKm = d.pricePerKm as number | undefined;
+
+    const property = await prisma.property.create({
+      data: {
+        title: d.title as string,
+        description: d.description as string,
+        propertyType: d.propertyType as string,
+        address: d.address as string,
+        district: d.district as string,
+        latitude: d.latitude as number,
+        longitude: d.longitude as number,
+        pricePerNight: d.pricePerNight as number,
+        minPrice: d.minPrice as number,
+        maxGuests: d.maxGuests as number,
+        bedrooms: d.bedrooms as number,
+        bathrooms: d.bathrooms as number,
+        beds: d.beds as number,
+        hostId: session.user.id,
+        status: "PENDING_APPROVAL",
+        amenities: amenities?.length
+          ? { create: amenities.map((name) => ({ name })) }
+          : undefined,
+      },
+      include: { amenities: true, images: true },
+    });
+
+    // Write the columns the Prisma client doesn't know about via raw SQL
+    const finalCategory = category ?? "STAY";
+    await prisma.$executeRaw`UPDATE "Property" SET "category" = ${finalCategory} WHERE "id" = ${property.id}`;
+
+    if (isTransport && typeof pricePerKm === "number") {
+      await prisma.$executeRaw`UPDATE "Property" SET "pricePerKm" = ${pricePerKm} WHERE "id" = ${property.id}`;
+    }
+
+    return NextResponse.json(
+      { ...property, category: finalCategory, pricePerKm: pricePerKm ?? null },
+      { status: 201 }
+    );
+  } catch (err) {
+    console.error("[POST /api/properties]", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 }
+    );
   }
-
-  const body = await req.json();
-  const result = PropertySchema.safeParse(body);
-  if (!result.success) {
-    return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
-  }
-
-  const { amenities, ...data } = result.data;
-
-  const property = await prisma.property.create({
-    data: {
-      ...data,
-      hostId: session.user.id,
-      status: "ACTIVE",
-      amenities: amenities?.length
-        ? { create: amenities.map((name) => ({ name })) }
-        : undefined,
-    },
-    include: { amenities: true, images: true },
-  });
-
-  return NextResponse.json(property, { status: 201 });
 }

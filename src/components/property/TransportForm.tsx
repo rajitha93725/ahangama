@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PROPERTY_TYPES, AMENITIES, SRI_LANKA_DISTRICTS } from "@/lib/constants";
-import { Upload, X, Plus } from "lucide-react";
+import { TRANSPORT_TYPES, SRI_LANKA_DISTRICTS } from "@/lib/constants";
+import { Upload, X } from "lucide-react";
 
 const DISTRICT_COORDS: Record<string, [number, number]> = {
   Colombo: [6.9271, 79.8612],
@@ -28,30 +28,46 @@ const DISTRICT_COORDS: Record<string, [number, number]> = {
   Hambantota: [6.1429, 81.1212],
 };
 
-export default function PropertyForm() {
+const TRANSPORT_FEATURES = [
+  "Air Conditioning",
+  "GPS Navigation",
+  "Driver Included",
+  "Fuel Included",
+  "Airport Pickup",
+  "Island Tour Package",
+  "Child Seat",
+  "Luggage Space",
+  "English Speaking Driver",
+  "24/7 Support",
+  "Insurance Included",
+  "Free Cancellation",
+];
+
+export default function TransportForm() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [images, setImages] = useState<{ url: string; file?: File }[]>([]);
+  const [images, setImages] = useState<{ url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
 
   const [form, setForm] = useState({
     title: "",
     description: "",
-    propertyType: "VILLA",
-    category: "STAY",
+    propertyType: "CAR",
+    category: "TRANSPORT",
     address: "",
-    district: "Galle",
-    latitude: DISTRICT_COORDS["Galle"][0],
-    longitude: DISTRICT_COORDS["Galle"][1],
-    pricePerNight: 80,
-    minPrice: 50,
+    district: "Colombo",
+    latitude: DISTRICT_COORDS["Colombo"][0],
+    longitude: DISTRICT_COORDS["Colombo"][1],
+    pricePerNight: 10,   // per-night parking charge
+    pricePerKm: 0.5,     // per-kilometer charge
+    minPrice: 20,
     currency: "USD",
     maxGuests: 4,
-    bedrooms: 2,
-    bathrooms: 1,
-    beds: 2,
+    bedrooms: 0,
+    bathrooms: 0,
+    beds: 0,
     amenities: [] as string[],
   });
 
@@ -67,7 +83,7 @@ export default function PropertyForm() {
     });
   };
 
-  const toggleAmenity = (name: string) => {
+  const toggleFeature = (name: string) => {
     setForm((prev) => ({
       ...prev,
       amenities: prev.amenities.includes(name)
@@ -105,7 +121,6 @@ export default function PropertyForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(JSON.stringify(data.error));
 
-      // Upload images to property
       if (images.length > 0) {
         await Promise.all(images.map((img, i) =>
           fetch(`/api/properties/${data.id}/images`, {
@@ -116,7 +131,7 @@ export default function PropertyForm() {
         ));
       }
 
-      router.push(`/dashboard/host`);
+      router.push(`/properties/${data.id}`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create listing");
     } finally {
@@ -124,33 +139,35 @@ export default function PropertyForm() {
     }
   };
 
+  const selectedType = TRANSPORT_TYPES.find((t) => t.value === form.propertyType);
+
   return (
     <div className="space-y-8">
-      {/* Steps indicator */}
+      {/* Steps */}
       <div className="flex items-center gap-2">
         {[1, 2, 3].map((s) => (
           <div key={s} className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${step >= s ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-400"}`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${step >= s ? "bg-amber-500 text-white" : "bg-gray-100 text-gray-400"}`}>
               {s}
             </div>
-            {s < 3 && <div className={`h-px w-16 ${step > s ? "bg-teal-600" : "bg-gray-200"}`} />}
+            {s < 3 && <div className={`h-px w-16 ${step > s ? "bg-amber-500" : "bg-gray-200"}`} />}
           </div>
         ))}
         <span className="ml-2 text-sm text-gray-500">
-          {step === 1 ? "Basic Info" : step === 2 ? "Amenities & Pricing" : "Photos"}
+          {step === 1 ? "Vehicle Details" : step === 2 ? "Features & Pricing" : "Photos"}
         </span>
       </div>
 
-      {/* Step 1: Basic Info */}
+      {/* Step 1 */}
       {step === 1 && (
         <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Property Title</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Listing Title</label>
             <input
               value={form.title}
               onChange={(e) => update("title", e.target.value)}
-              placeholder="e.g., Cozy Beach Villa in Unawatuna"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+              placeholder="e.g., Comfortable AC Car with English Driver – Galle"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
             />
           </div>
           <div>
@@ -159,114 +176,141 @@ export default function PropertyForm() {
               value={form.description}
               onChange={(e) => update("description", e.target.value)}
               rows={4}
-              placeholder="Describe your property, its surroundings, and what makes it special..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none resize-none"
+              placeholder="Describe your vehicle, routes, and what's included..."
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Property Type</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
               <select
                 value={form.propertyType}
                 onChange={(e) => update("propertyType", e.target.value)}
-                className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
               >
-                {PROPERTY_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {TRANSPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">District</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Base District</label>
               <select
                 value={form.district}
                 onChange={(e) => update("district", e.target.value)}
-                className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
               >
                 {SRI_LANKA_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pickup Address / Location</label>
             <input
               value={form.address}
               onChange={(e) => update("address", e.target.value)}
-              placeholder="Street address, neighborhood..."
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+              placeholder="Where can travelers find or pick up this vehicle?"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
             />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { field: "maxGuests", label: "Max Guests" },
-              { field: "bedrooms", label: "Bedrooms" },
-              { field: "beds", label: "Beds" },
-              { field: "bathrooms", label: "Bathrooms" },
-            ].map(({ field, label }) => (
-              <div key={field}>
-                <label className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={(form as Record<string, unknown>)[field] as number}
-                  onChange={(e) => update(field, parseInt(e.target.value))}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                />
-              </div>
-            ))}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Max Passengers</label>
+            <input
+              type="number"
+              min="1"
+              max="20"
+              value={form.maxGuests}
+              onChange={(e) => update("maxGuests", parseInt(e.target.value))}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+            />
           </div>
         </div>
       )}
 
-      {/* Step 2: Amenities & Pricing */}
+      {/* Step 2 */}
       {step === 2 && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Base Price/Night (USD)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Per Kilometer Charge (USD)
+                <span className="ml-1 text-xs text-gray-400">per km</span>
+              </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
                 <input
                   type="number"
-                  min="1"
+                  min="0"
+                  step="0.01"
+                  value={form.pricePerKm}
+                  onChange={(e) => update("pricePerKm", parseFloat(e.target.value) || 0)}
+                  className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Charged per km driven</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Parking Charge (USD)
+                <span className="ml-1 text-xs text-gray-400">per night</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
                   value={form.pricePerNight}
-                  onChange={(e) => update("pricePerNight", parseFloat(e.target.value))}
-                  className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                  onChange={(e) => update("pricePerNight", parseFloat(e.target.value) || 0)}
+                  className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
                 />
               </div>
+              <p className="text-xs text-gray-400 mt-1">Overnight parking / per-day holding fee</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Acceptable (USD)</label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={form.minPrice}
-                  onChange={(e) => update("minPrice", parseFloat(e.target.value))}
-                  className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                />
-              </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Minimum Acceptable Offer (USD)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+              <input
+                type="number"
+                min="1"
+                value={form.minPrice}
+                onChange={(e) => update("minPrice", parseFloat(e.target.value))}
+                className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+              />
             </div>
+            <p className="text-xs text-gray-400 mt-1">Lowest total offer you'll accept from a guest</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">Amenities</label>
+            <label className="block text-sm font-medium text-gray-700 mb-3">Features & Inclusions</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {AMENITIES.map((a) => (
+              {TRANSPORT_FEATURES.map((f) => (
                 <button
-                  key={a.name}
+                  key={f}
                   type="button"
-                  onClick={() => toggleAmenity(a.name)}
+                  onClick={() => toggleFeature(f)}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
-                    form.amenities.includes(a.name)
-                      ? "border-teal-500 bg-teal-50 text-teal-700"
+                    form.amenities.includes(f)
+                      ? "border-amber-500 bg-amber-50 text-amber-700"
                       : "border-gray-200 text-gray-600 hover:border-gray-300"
                   }`}
                 >
-                  <span className="text-base">{form.amenities.includes(a.name) ? "✓" : "+"}</span>
-                  {a.name}
+                  <span className="text-base">{form.amenities.includes(f) ? "✓" : "+"}</span>
+                  {f}
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <p className="text-sm text-amber-800 font-medium">
+              {selectedType?.label} · {form.district} · up to {form.maxGuests} passengers
+            </p>
+            <p className="text-xs text-amber-600 mt-1">
+              ${form.pricePerKm}/km · ${form.pricePerNight}/night parking · min offer ${form.minPrice}
+            </p>
           </div>
         </div>
       )}
@@ -276,9 +320,9 @@ export default function PropertyForm() {
         <div className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-3">
-              Property Photos <span className="text-gray-400">(first photo will be the main image)</span>
+              Vehicle Photos <span className="text-gray-400">(first photo is the main image)</span>
             </label>
-            <label className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-teal-400 transition-colors">
+            <label className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-amber-400 transition-colors">
               <Upload className="w-8 h-8 text-gray-400" />
               <div className="text-center">
                 <p className="text-sm font-medium text-gray-700">Click to upload photos</p>
@@ -294,13 +338,7 @@ export default function PropertyForm() {
             </label>
           </div>
 
-          {uploading && <p className="text-sm text-teal-600">Uploading images…</p>}
-
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-            <p className="text-sm text-orange-800">
-              Your listing will be reviewed by our admin team before going live. This usually takes less than 24 hours.
-            </p>
-          </div>
+          {uploading && <p className="text-sm text-amber-600">Uploading images…</p>}
 
           {images.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
@@ -308,7 +346,7 @@ export default function PropertyForm() {
                 <div key={i} className="relative aspect-square rounded-xl overflow-hidden">
                   <img src={img.url} alt="" className="w-full h-full object-cover" />
                   {i === 0 && (
-                    <span className="absolute top-1 left-1 bg-teal-600 text-white text-xs px-2 py-0.5 rounded-full">Main</span>
+                    <span className="absolute top-1 left-1 bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full">Main</span>
                   )}
                   <button
                     onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
@@ -320,6 +358,12 @@ export default function PropertyForm() {
               ))}
             </div>
           )}
+
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+            <p className="text-sm text-orange-800">
+              Your listing will be reviewed by our admin team before going live. This usually takes less than 24 hours.
+            </p>
+          </div>
         </div>
       )}
 
@@ -339,7 +383,7 @@ export default function PropertyForm() {
         {step < 3 ? (
           <button
             onClick={() => setStep((s) => s + 1)}
-            className="px-8 py-3 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"
+            className="px-8 py-3 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 transition-colors"
           >
             Continue
           </button>
@@ -347,7 +391,7 @@ export default function PropertyForm() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="px-8 py-3 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition-colors"
+            className="px-8 py-3 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 transition-colors"
           >
             {submitting ? "Submitting…" : "Submit for Review"}
           </button>

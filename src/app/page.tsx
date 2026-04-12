@@ -3,7 +3,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import PropertyGrid from "@/components/property/PropertyGrid";
 import { SRI_LANKA_DISTRICTS } from "@/lib/constants";
-import { Search, MapPin, Shield, Star } from "lucide-react";
+import { Search, MapPin, Home, Car } from "lucide-react";
 
 async function getFeaturedProperties() {
   try {
@@ -75,6 +75,41 @@ export default async function HomePage() {
               <span>✓ Direct host contact</span>
               <span>✓ Verified listings</span>
             </div>
+          </div>
+        </section>
+
+        {/* Category Selection */}
+        <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">What are you looking for?</h2>
+          <p className="text-gray-500 text-center mb-8">Choose a category to start exploring</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <Link
+              href="/properties?category=STAY"
+              className="group relative flex flex-col items-center justify-center gap-4 p-10 rounded-3xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center">
+                <Home className="w-8 h-8 text-white" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-2xl font-bold mb-1">Stays</h3>
+                <p className="text-teal-100 text-sm">Villas, guesthouses, hotels, eco-lodges & more</p>
+              </div>
+              <span className="absolute bottom-4 right-4 text-white/60 text-xs group-hover:text-white/90 transition-colors">Explore →</span>
+            </Link>
+
+            <Link
+              href="/properties?category=TRANSPORT"
+              className="group relative flex flex-col items-center justify-center gap-4 p-10 rounded-3xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center">
+                <Car className="w-8 h-8 text-white" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-2xl font-bold mb-1">Transport</h3>
+                <p className="text-amber-100 text-sm">Cars, tuk-tuks, boats, vans & island tours</p>
+              </div>
+              <span className="absolute bottom-4 right-4 text-white/60 text-xs group-hover:text-white/90 transition-colors">Explore →</span>
+            </Link>
           </div>
         </section>
 

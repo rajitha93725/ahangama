@@ -16,7 +16,11 @@
       "Bash(curl -s http://localhost:3000/api/properties)",
       "Bash(python -m json.tool)",
       "Bash(curl -s \"http://localhost:3000/api/properties?district=Galle\")",
-      "Bash(curl -v \"http://localhost:3000/api/properties?district=Galle\")"
+      "Bash(curl -v \"http://localhost:3000/api/properties?district=Galle\")",
+      "Bash(npx tsc:*)",
+      "Bash(npx next:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(grep:*)"
     ]
   }
 }

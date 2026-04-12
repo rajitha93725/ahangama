@@ -29,7 +29,11 @@ export default function LoginForm({ callbackUrl = "/" }: Props) {
     });
     setLoading(false);
     if (result?.error) {
-      setError("Invalid email or password");
+      if (result.error.includes("PENDING_APPROVAL")) {
+        setError("Your account is pending admin approval. Please check back later.");
+      } else {
+        setError("Invalid email or password");
+      }
     } else {
       router.push(callbackUrl);
       router.refresh();
