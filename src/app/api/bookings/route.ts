@@ -41,68 +41,120 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // Enrich bookings with transport fields (stale Prisma client doesn't know them)
+  if (bookings.length > 0) {
+    const ids = bookings.map((b) => b.id);
+    const transportRows = await prisma.$queryRawUnsafe<
+      { id: string; pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null }[]
+    >(
+      `SELECT id, pickupPoint, dropPoint, distanceKm FROM "Booking" WHERE id IN (${ids.map(() => "?").join(",")})`,
+      ...ids
+    );
+    const tMap = Object.fromEntries(transportRows.map((r) => [r.id, r]));
+    return NextResponse.json(bookings.map((b) => ({ ...b, ...tMap[b.id] })));
+  }
+
   return NextResponse.json(bookings);
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await auth();
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json();
-  const result = BookingRequestSchema.safeParse(body);
-  if (!result.success) return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
+    const body = await req.json();
+    const result = BookingRequestSchema.safeParse(body);
+    if (!result.success) return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
 
-  const { propertyId, checkIn, checkOut, guests, offerAmount, message } = result.data;
-  const checkInDate = new Date(checkIn);
-  const checkOutDate = new Date(checkOut);
-  const nights = calcNights(checkInDate, checkOutDate);
+    const { propertyId, checkIn, checkOut, guests, offerAmount, message,
+            pickupPoint, dropPoint, distanceKm } = result.data;
 
-  if (nights <= 0) {
-    return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
-  }
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+    const nights = calcNights(checkInDate, checkOutDate);
 
-  const property = await prisma.property.findUnique({ where: { id: propertyId } });
-  if (!property || property.status !== "ACTIVE") {
-    return NextResponse.json({ error: "Property not available" }, { status: 400 });
-  }
-  if (property.hostId === session.user.id) {
-    return NextResponse.json({ error: "Cannot book your own property" }, { status: 400 });
-  }
+    if (nights <= 0) {
+      return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
+    }
 
-  const booking = await prisma.booking.create({
-    data: {
-      propertyId,
-      guestId: session.user.id,
-      checkIn: checkInDate,
-      checkOut: checkOutDate,
-      guests,
-      nights,
-      status: "PENDING_OFFER",
-      offers: {
-        create: {
-          senderId: session.user.id,
-          amount: offerAmount,
-          message,
-          type: "INITIAL_OFFER",
+    const property = await prisma.property.findUnique({ where: { id: propertyId } });
+    if (!property || property.status !== "ACTIVE") {
+      return NextResponse.json({ error: "Property not available" }, { status: 400 });
+    }
+    if (property.hostId === session.user.id) {
+      return NextResponse.json({ error: "Cannot book your own property" }, { status: 400 });
+    }
+
+    // For transport: validate required fields
+    const catRows = await prisma.$queryRaw<{ category: string; pricePerKm: number | null }[]>`
+      SELECT category, pricePerKm FROM "Property" WHERE id = ${propertyId}
+    `;
+    const isTransport = catRows[0]?.category === "TRANSPORT";
+    const pricePerKm = catRows[0]?.pricePerKm ?? 0;
+
+    if (isTransport && (!pickupPoint || !dropPoint)) {
+      return NextResponse.json({ error: "Pickup and drop points are required for transport bookings" }, { status: 400 });
+    }
+
+    // Notification message differs for transport
+    const notifMsg = isTransport
+      ? `${session.user.name || "A guest"} sent an offer of $${offerAmount} for ${distanceKm ?? "?"} km trip (${nights} nights parking)`
+      : `${session.user.name || "A guest"} sent an offer of $${offerAmount}/night for ${nights} nights`;
+
+    const booking = await prisma.booking.create({
+      data: {
+        propertyId,
+        guestId: session.user.id,
+        checkIn: checkInDate,
+        checkOut: checkOutDate,
+        guests,
+        nights,
+        status: "PENDING_OFFER",
+        offers: {
+          create: {
+            senderId: session.user.id,
+            amount: offerAmount,
+            message,
+            type: "INITIAL_OFFER",
+          },
         },
       },
-    },
-    include: {
-      offers: true,
-      property: { select: { title: true, hostId: true } },
-    },
-  });
+      include: {
+        offers: true,
+        property: { select: { title: true, hostId: true } },
+      },
+    });
 
-  // Create notification for host
-  await prisma.notification.create({
-    data: {
-      userId: property.hostId,
-      type: "BOOKING_REQUEST",
-      title: "New Booking Request",
-      message: `${session.user.name || "A guest"} sent an offer of $${offerAmount}/night for ${nights} nights`,
-      data: JSON.stringify({ bookingId: booking.id }),
-    },
-  });
+    // Write transport fields via raw SQL (Prisma client doesn't know these columns yet)
+    if (isTransport && pickupPoint && dropPoint) {
+      await prisma.$executeRaw`
+        UPDATE "Booking"
+        SET pickupPoint = ${pickupPoint},
+            dropPoint   = ${dropPoint},
+            distanceKm  = ${distanceKm ?? null}
+        WHERE id = ${booking.id}
+      `;
+    }
 
-  return NextResponse.json(booking, { status: 201 });
+    await prisma.notification.create({
+      data: {
+        userId: property.hostId,
+        type: "BOOKING_REQUEST",
+        title: "New Booking Request",
+        message: notifMsg,
+        data: JSON.stringify({ bookingId: booking.id }),
+      },
+    });
+
+    return NextResponse.json(
+      { ...booking, pickupPoint: pickupPoint ?? null, dropPoint: dropPoint ?? null, distanceKm: distanceKm ?? null },
+      { status: 201 }
+    );
+  } catch (err) {
+    console.error("[POST /api/bookings]", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 }
+    );
+  }
 }

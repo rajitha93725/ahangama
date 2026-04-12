@@ -152,15 +152,18 @@ model SavedProperty {
 // ─── BOOKINGS & NEGOTIATION ────────────────────────────────────────────────
 
 model Booking {
-  id         String   @id @default(cuid())
-  propertyId String
-  guestId    String
-  checkIn    DateTime
-  checkOut   DateTime
-  guests     Int
-  status     String   @default("PENDING_OFFER")  // PENDING_OFFER | COUNTERED | ACCEPTED | REJECTED | CANCELLED | COMPLETED
-  totalPrice Float?
-  nights     Int
+  id           String   @id @default(cuid())
+  propertyId   String
+  guestId      String
+  checkIn      DateTime
+  checkOut     DateTime
+  guests       Int
+  status       String   @default("PENDING_OFFER")  // PENDING_OFFER | COUNTERED | ACCEPTED | REJECTED | CANCELLED | COMPLETED
+  totalPrice   Float?
+  nights       Int
+  pickupPoint  String?  // Transport only
+  dropPoint    String?  // Transport only
+  distanceKm   Float?   // Transport only
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

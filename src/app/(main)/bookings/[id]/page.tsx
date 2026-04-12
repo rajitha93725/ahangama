@@ -1,12 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import NegotiationThread from "@/components/booking/NegotiationThread";
 import BookingDetailClient from "./BookingDetailClient";
 import BookingStatusBadge from "@/components/booking/BookingStatusBadge";
 import { formatDateRange, formatCurrency, getInitials } from "@/lib/utils";
 import Link from "next/link";
-import { MapPin, Calendar, Users, ArrowLeft } from "lucide-react";
+import { MapPin, Calendar, Users, ArrowLeft, Navigation, Car } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -36,6 +35,18 @@ export default async function BookingDetailPage({ params }: Props) {
   });
 
   if (!booking) notFound();
+
+  // Enrich with transport fields (stale Prisma client doesn't know them)
+  const transportRow = await prisma.$queryRaw<
+    { pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null; category: string }[]
+  >`
+    SELECT b.pickupPoint, b.dropPoint, b.distanceKm, p.category
+    FROM "Booking" b
+    JOIN "Property" p ON p.id = b.propertyId
+    WHERE b.id = ${id}
+  `;
+  const transportInfo = transportRow[0] ?? { pickupPoint: null, dropPoint: null, distanceKm: null, category: "STAY" };
+  const isTransportBooking = transportInfo.category === "TRANSPORT";
 
   const isGuest = booking.guestId === session.user.id;
   const isHost = booking.property.hostId === session.user.id;
@@ -87,28 +98,78 @@ export default async function BookingDetailPage({ params }: Props) {
               <h2 className="font-semibold text-gray-900">Booking Details</h2>
               <BookingStatusBadge status={booking.status} />
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="flex items-center gap-2 text-gray-600">
-                <Calendar className="w-4 h-4 text-teal-500" />
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">Dates</p>
-                  <p>{formatDateRange(booking.checkIn, booking.checkOut)}</p>
+            {isTransportBooking && transportInfo.pickupPoint ? (
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start gap-2 text-gray-600">
+                  <MapPin className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-400 mb-0.5">Pickup Point</p>
+                    <p className="font-medium">{transportInfo.pickupPoint}</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 text-gray-600">
+                  <Navigation className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-400 mb-0.5">Drop Point</p>
+                    <p className="font-medium">{transportInfo.dropPoint}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {transportInfo.distanceKm !== null && (
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Car className="w-4 h-4 text-amber-500" />
+                      <div>
+                        <p className="text-xs text-gray-400 mb-0.5">Distance</p>
+                        <p>{transportInfo.distanceKm} km</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Calendar className="w-4 h-4 text-amber-500" />
+                    <div>
+                      <p className="text-xs text-gray-400 mb-0.5">Trip Dates</p>
+                      <p>{formatDateRange(booking.checkIn, booking.checkOut)}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Users className="w-4 h-4 text-amber-500" />
+                  <div>
+                    <p className="text-xs text-gray-400 mb-0.5">Passengers · Nights</p>
+                    <p>{booking.guests} passengers · {booking.nights} nights</p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 text-gray-600">
-                <Users className="w-4 h-4 text-teal-500" />
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">Guests & Nights</p>
-                  <p>{booking.guests} guests · {booking.nights} nights</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Calendar className="w-4 h-4 text-teal-500" />
+                  <div>
+                    <p className="text-xs text-gray-400 mb-0.5">Dates</p>
+                    <p>{formatDateRange(booking.checkIn, booking.checkOut)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Users className="w-4 h-4 text-teal-500" />
+                  <div>
+                    <p className="text-xs text-gray-400 mb-0.5">Guests & Nights</p>
+                    <p>{booking.guests} guests · {booking.nights} nights</p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {booking.status === "ACCEPTED" && booking.totalPrice !== null && (
               <div className="bg-green-50 rounded-xl p-4 border border-green-200">
                 <p className="text-sm text-green-800 font-medium">Booking Confirmed</p>
                 <p className="text-lg font-bold text-green-900 mt-1">{formatCurrency(booking.totalPrice!)} total</p>
-                <p className="text-xs text-green-600">{formatCurrency(booking.totalPrice! / booking.nights)}/night for {booking.nights} nights</p>
+                {isTransportBooking ? (
+                  transportInfo.distanceKm
+                    ? <p className="text-xs text-green-600">{transportInfo.distanceKm} km · {booking.nights} nights parking</p>
+                    : null
+                ) : (
+                  <p className="text-xs text-green-600">{formatCurrency(booking.totalPrice! / booking.nights)}/night for {booking.nights} nights</p>
+                )}
               </div>
             )}
 

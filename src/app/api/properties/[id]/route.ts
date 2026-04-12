@@ -21,12 +21,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Enrich with columns the stale Prisma client doesn't know about
+  const extras = await prisma.$queryRaw<{ category: string; pricePerKm: number | null }[]>`
+    SELECT category, pricePerKm FROM "Property" WHERE id = ${id}
+  `;
+  const { category = "STAY", pricePerKm = null } = extras[0] ?? {};
+
   const avgRating =
     property.reviews.length > 0
       ? property.reviews.reduce((sum, r) => sum + r.rating, 0) / property.reviews.length
       : null;
 
-  return NextResponse.json({ ...property, avgRating, reviewCount: property.reviews.length });
+  return NextResponse.json({ ...property, category, pricePerKm, avgRating, reviewCount: property.reviews.length });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

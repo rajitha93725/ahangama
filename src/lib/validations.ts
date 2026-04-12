@@ -72,6 +72,10 @@ export const BookingRequestSchema = z.object({
   guests: z.number().int().min(1),
   offerAmount: z.number().min(1),
   message: z.string().max(500).optional(),
+  // Transport-only fields
+  pickupPoint: z.string().min(2).optional(),
+  dropPoint: z.string().min(2).optional(),
+  distanceKm: z.number().min(0).optional(),
 });
 
 export const OfferSchema = z.object({

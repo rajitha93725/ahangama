@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 import PropertyGallery from "@/components/property/PropertyGallery";
 import BookingWidget from "@/components/booking/BookingWidget";
 import StarRating from "@/components/shared/StarRating";
-import { formatDate, getInitials } from "@/lib/utils";
-import { MapPin, Users, BedDouble, Bath, Wifi } from "lucide-react";
+import { formatDate, getInitials, formatCurrency } from "@/lib/utils";
+import { MapPin, Users, BedDouble, Bath, Wifi, Car, Navigation } from "lucide-react";
 
 async function fetchProperty(id: string) {
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
@@ -49,13 +49,25 @@ export default async function PropertyDetailPage({ params }: Props) {
           <div className="flex items-start justify-between pb-6 border-b border-gray-200">
             <div>
               <h2 className="text-xl font-semibold text-gray-900">
-                {property.propertyType.replace("_", " ")} hosted by {property.host.name}
+                {property.propertyType.replace(/_/g, " ")} {property.category === "TRANSPORT" ? "offered" : "hosted"} by {property.host.name}
               </h2>
-              <div className="flex flex-wrap gap-3 mt-2 text-sm text-gray-600">
-                <span className="flex items-center gap-1"><Users className="w-4 h-4" />{property.maxGuests} guests</span>
-                <span className="flex items-center gap-1"><BedDouble className="w-4 h-4" />{property.bedrooms} bedrooms</span>
-                <span className="flex items-center gap-1"><Bath className="w-4 h-4" />{property.bathrooms} bathrooms</span>
-              </div>
+              {property.category === "TRANSPORT" ? (
+                <div className="flex flex-wrap gap-3 mt-2 text-sm text-gray-600">
+                  <span className="flex items-center gap-1"><Users className="w-4 h-4" />{property.maxGuests} passengers</span>
+                  {property.pricePerKm > 0 && (
+                    <span className="flex items-center gap-1"><Navigation className="w-4 h-4 text-amber-500" />{formatCurrency(property.pricePerKm)}/km</span>
+                  )}
+                  {property.pricePerNight > 0 && (
+                    <span className="flex items-center gap-1"><Car className="w-4 h-4 text-amber-500" />{formatCurrency(property.pricePerNight)}/night parking</span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-3 mt-2 text-sm text-gray-600">
+                  <span className="flex items-center gap-1"><Users className="w-4 h-4" />{property.maxGuests} guests</span>
+                  <span className="flex items-center gap-1"><BedDouble className="w-4 h-4" />{property.bedrooms} bedrooms</span>
+                  <span className="flex items-center gap-1"><Bath className="w-4 h-4" />{property.bathrooms} bathrooms</span>
+                </div>
+              )}
             </div>
             <div className="flex-shrink-0">
               {property.host.image ? (
@@ -133,6 +145,8 @@ export default async function PropertyDetailPage({ params }: Props) {
             pricePerNight={property.pricePerNight}
             minPrice={property.minPrice}
             maxGuests={property.maxGuests}
+            category={property.category ?? "STAY"}
+            pricePerKm={property.pricePerKm ?? 0}
           />
         </div>
       </div>
