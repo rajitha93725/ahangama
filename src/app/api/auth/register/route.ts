@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
   }
 
-  const { name, email, password, role } = result.data;
+  const { name, email, password, role, phone } = result.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   const passwordHash = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { name, email, passwordHash, role, isActive: false },
+    data: { name, email, passwordHash, role, isActive: false, phone: phone || null },
     select: { id: true, name: true, email: true, role: true },
   });
 

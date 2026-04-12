@@ -2,6 +2,120 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OfferSchema } from "@/lib/validations";
+import { randomUUID } from "crypto";
+
+// ─── Auto Room Assignment ─────────────────────────────────────────────────────
+// Called when a booking reaches ACCEPTED status.
+// 1. Ensures the property has rooms (provisions Room 1…N from bedrooms count if none exist).
+// 2. Collects free rooms for the stay dates.
+// 3. Assigns up to `roomsRequested` free rooms:
+//    - Primary room → set roomId on the Booking row (shows green in calendar).
+//    - Extra rooms  → blocked via ExternalBooking rows so the calendar reflects occupancy.
+// Non-fatal: errors are logged but never block the booking confirmation.
+async function autoAssignRoom(
+  bookingId: string,
+  propertyId: string,
+  checkIn: Date,
+  checkOut: Date
+) {
+  try {
+    const checkInIso = checkIn.toISOString();
+    const checkOutIso = checkOut.toISOString();
+
+    // 1. Provision rooms if the property currently has none
+    const countRow = await prisma.$queryRawUnsafe<{ cnt: number }[]>(
+      `SELECT COUNT(*) as cnt FROM "Room" WHERE propertyId = ? AND isActive = 1`,
+      propertyId
+    );
+    const existingCount = Number(countRow[0]?.cnt ?? 0);
+
+    if (existingCount === 0) {
+      const prop = await prisma.property.findUnique({
+        where: { id: propertyId },
+        select: { bedrooms: true },
+      });
+      const catRow = await prisma.$queryRawUnsafe<{ category: string }[]>(
+        `SELECT category FROM "Property" WHERE id = ?`,
+        propertyId
+      );
+      const isStay = catRow[0]?.category !== "TRANSPORT";
+
+      if (isStay && prop?.bedrooms && prop.bedrooms > 0) {
+        const now = new Date().toISOString();
+        for (let i = 1; i <= prop.bedrooms; i++) {
+          await prisma.$queryRawUnsafe(
+            `INSERT INTO "Room" (id, propertyId, name, maxGuests, isActive, createdAt) VALUES (?, ?, ?, 2, 1, ?)`,
+            randomUUID(), propertyId, `Room ${i}`, now
+          );
+        }
+      }
+    }
+
+    // 2. Get all active rooms for this property in insertion order.
+    //    ROWID is used instead of createdAt because rooms seeded in the same
+    //    loop iteration share an identical createdAt timestamp, making ORDER BY
+    //    createdAt non-deterministic. ROWID is always auto-incrementing in SQLite.
+    const rooms = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM "Room" WHERE propertyId = ? AND isActive = 1 ORDER BY ROWID ASC`,
+      propertyId
+    );
+
+    // 3. Find free rooms (no overlapping external or internal booking)
+    const freeRooms: string[] = [];
+    for (const room of rooms) {
+      const extConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM "ExternalBooking"
+         WHERE roomId = ? AND status = 'BOOKED'
+           AND checkIn < ? AND checkOut > ?`,
+        room.id, checkOutIso, checkInIso
+      );
+      if (extConflict.length) continue;
+
+      const intConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM "Booking"
+         WHERE roomId = ? AND id != ? AND status IN ('ACCEPTED', 'COMPLETED')
+           AND checkIn < strftime('%s', ?) * 1000
+           AND checkOut > strftime('%s', ?) * 1000`,
+        room.id, bookingId, checkOutIso, checkInIso
+      );
+      if (intConflict.length) continue;
+
+      freeRooms.push(room.id);
+    }
+
+    if (freeRooms.length === 0) return; // No rooms free — stays unassigned (amber banner)
+
+    // 4. How many rooms did the guest request, and who is the guest?
+    const bookingRow = await prisma.$queryRawUnsafe<{ roomsRequested: number; guestName: string | null }[]>(
+      `SELECT b.roomsRequested, u.name as guestName
+       FROM "Booking" b
+       INNER JOIN "User" u ON u.id = b.guestId
+       WHERE b.id = ?`,
+      bookingId
+    );
+    const requested = Number(bookingRow[0]?.roomsRequested ?? 1);
+    const guestName = bookingRow[0]?.guestName ?? "Ahangama booking";
+    const toAssign = freeRooms.slice(0, requested);
+
+    // 4a. Primary room → set roomId on the Booking (shows as green Ahangama in calendar)
+    await prisma.$executeRaw`UPDATE "Booking" SET roomId = ${toAssign[0]} WHERE id = ${bookingId}`;
+
+    // 4b. Extra rooms → create ExternalBooking rows with source = 'AHANGAMA'.
+    //     The calendar API detects this source and renders them as green Internal
+    //     (same as the primary room) rather than blue External.
+    const now = new Date().toISOString();
+    for (let i = 1; i < toAssign.length; i++) {
+      await prisma.$queryRawUnsafe(
+        `INSERT INTO "ExternalBooking" (id, propertyId, roomId, checkIn, checkOut, source, guestName, notes, status, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, 'AHANGAMA', ?, ?, 'BOOKED', ?, ?)`,
+        randomUUID(), propertyId, toAssign[i], checkInIso, checkOutIso,
+        guestName, `Linked to booking ${bookingId} (multi-room)`, now, now
+      );
+    }
+  } catch (err) {
+    console.error("[autoAssignRoom]", err);
+  }
+}
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   PENDING_OFFER: ["COUNTERED", "ACCEPTED", "REJECTED"],
@@ -83,6 +197,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: { status: newStatus, ...(totalPrice ? { totalPrice } : {}) },
     }),
   ]);
+
+  // Auto-assign a room in the booking calendar when booking is confirmed
+  if (type === "ACCEPTANCE") {
+    await autoAssignRoom(id, booking.propertyId, booking.checkIn, booking.checkOut);
+  }
 
   // Notify the other party
   const recipientId = isGuest ? booking.property.hostId : booking.guestId;

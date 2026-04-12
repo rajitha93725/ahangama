@@ -4,12 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { Eye, EyeOff, Mail, Lock, User, Home } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, Home, Phone } from "lucide-react";
 
 export default function RegisterForm() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"GUEST" | "HOST">("GUEST");
   const [showPass, setShowPass] = useState(false);
@@ -25,7 +26,7 @@ export default function RegisterForm() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, role }),
+        body: JSON.stringify({ name, email, phone, password, role }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Registration failed");
@@ -70,8 +71,8 @@ export default function RegisterForm() {
           className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${role === "GUEST" ? "border-teal-500 bg-teal-50" : "border-gray-200 hover:border-gray-300"}`}
         >
           <User className={`w-6 h-6 ${role === "GUEST" ? "text-teal-600" : "text-gray-400"}`} />
-          <span className={`text-sm font-medium ${role === "GUEST" ? "text-teal-700" : "text-gray-600"}`}>I'm a Guest</span>
-          <span className="text-xs text-gray-400 text-center">Looking to explore Sri Lanka</span>
+          <span className={`text-base font-semibold ${role === "GUEST" ? "text-teal-700" : "text-gray-700"}`}>Explore Sri Lanka</span>
+          <span className={`text-xs text-center ${role === "GUEST" ? "text-teal-500" : "text-gray-400"}`}>I'm a Guest</span>
         </button>
         <button
           type="button"
@@ -79,8 +80,8 @@ export default function RegisterForm() {
           className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${role === "HOST" ? "border-teal-500 bg-teal-50" : "border-gray-200 hover:border-gray-300"}`}
         >
           <Home className={`w-6 h-6 ${role === "HOST" ? "text-teal-600" : "text-gray-400"}`} />
-          <span className={`text-sm font-medium ${role === "HOST" ? "text-teal-700" : "text-gray-600"}`}>I'm a Host</span>
-          <span className="text-xs text-gray-400 text-center">List your property</span>
+          <span className={`text-base font-semibold ${role === "HOST" ? "text-teal-700" : "text-gray-700"}`}>List my Property</span>
+          <span className={`text-xs text-center ${role === "HOST" ? "text-teal-500" : "text-gray-400"}`}>I'm a Host</span>
         </button>
       </div>
 
@@ -109,6 +110,22 @@ export default function RegisterForm() {
             onChange={(e) => setEmail(e.target.value)}
             required
             placeholder="you@example.com"
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none text-sm"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Mobile Number <span className="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <div className="relative">
+          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+94 77 123 4567"
             className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none text-sm"
           />
         </div>

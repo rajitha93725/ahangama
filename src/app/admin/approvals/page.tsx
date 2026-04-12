@@ -7,6 +7,7 @@ type PendingUser = {
   id: string;
   name: string | null;
   email: string;
+  phone: string | null;
   role: string;
   createdAt: string;
   type: "user";
@@ -39,8 +40,8 @@ export default function AdminApprovalsPage() {
       fetch("/api/admin/properties?status=PENDING_APPROVAL"),
     ]);
     if (usersRes.ok) {
-      const data: PendingUser[] = await usersRes.json();
-      setPendingUsers(data.filter((u) => !("isActive" in u) || !(u as unknown as { isActive: boolean }).isActive).map((u) => ({ ...u, type: "user" as const })));
+      const data: (PendingUser & { isActive?: boolean })[] = await usersRes.json();
+      setPendingUsers(data.filter((u) => !u.isActive).map((u) => ({ ...u, type: "user" as const })));
     }
     if (propsRes.ok) {
       const data: PendingProperty[] = await propsRes.json();
@@ -137,6 +138,9 @@ export default function AdminApprovalsPage() {
                     <div>
                       <p className="font-semibold text-gray-900">{u.name || "Unnamed User"}</p>
                       <p className="text-sm text-gray-500">{u.email}</p>
+                      {u.phone && (
+                        <p className="text-sm text-gray-500">{u.phone}</p>
+                      )}
                       <div className="flex items-center gap-2 mt-1">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.role === "HOST" ? "bg-teal-100 text-teal-700" : "bg-blue-100 text-blue-700"}`}>
                           {u.role}

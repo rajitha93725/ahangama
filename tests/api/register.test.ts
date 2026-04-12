@@ -137,4 +137,76 @@ describe("POST /api/auth/register", () => {
       })
     );
   });
+
+  // ── phone field (added in this session) ──────────────────────────────────
+  it("saves phone number when provided", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue({
+      id: "new-user-3",
+      name: "Sam",
+      email: "sam@example.com",
+      role: "GUEST",
+    });
+
+    const req = new NextRequest("http://localhost:3000/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Sam Silva",
+        email: "sam@example.com",
+        password: "password123",
+        role: "GUEST",
+        phone: "+94771234567",
+      }),
+    });
+
+    await POST(req);
+    expect(mockPrisma.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ phone: "+94771234567" }),
+      })
+    );
+  });
+
+  it("stores phone as null when omitted", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue({
+      id: "new-user-4",
+      name: "Nimal",
+      email: "nimal@example.com",
+      role: "GUEST",
+    });
+
+    const req = new NextRequest("http://localhost:3000/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Nimal Perera",
+        email: "nimal@example.com",
+        password: "password123",
+        role: "GUEST",
+      }),
+    });
+
+    await POST(req);
+    expect(mockPrisma.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ phone: null }),
+      })
+    );
+  });
+
+  it("returns 400 for invalid phone format", async () => {
+    const req = new NextRequest("http://localhost:3000/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Bad Phone",
+        email: "bad@example.com",
+        password: "password123",
+        role: "GUEST",
+        phone: "abc",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
 });

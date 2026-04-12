@@ -54,6 +54,37 @@ describe("RegisterSchema", () => {
     const result = RegisterSchema.safeParse({ ...validData, role: "HOST" });
     expect(result.success).toBe(true);
   });
+
+  // ── phone field (added in this session) ──────────────────────────────────
+  it("accepts valid mobile number", () => {
+    const result = RegisterSchema.safeParse({ ...validData, phone: "+94771234567" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts mobile number with spaces and dashes", () => {
+    const result = RegisterSchema.safeParse({ ...validData, phone: "+94 77 123-4567" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts empty string for phone (optional)", () => {
+    const result = RegisterSchema.safeParse({ ...validData, phone: "" });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts missing phone (optional)", () => {
+    const result = RegisterSchema.safeParse(validData);
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects phone that is too short", () => {
+    const result = RegisterSchema.safeParse({ ...validData, phone: "123" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects phone with letters", () => {
+    const result = RegisterSchema.safeParse({ ...validData, phone: "ABCDEFGHIJ" });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("LoginSchema", () => {
@@ -291,6 +322,29 @@ describe("BookingRequestSchema", () => {
       ...validBooking,
       checkIn: "not-a-date",
     });
+    expect(result.success).toBe(false);
+  });
+
+  // ── roomsRequested field (added in this session) ─────────────────────────
+  it("defaults roomsRequested to 1 when omitted", () => {
+    const result = BookingRequestSchema.safeParse(validBooking);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.roomsRequested).toBe(1);
+  });
+
+  it("accepts roomsRequested of 2", () => {
+    const result = BookingRequestSchema.safeParse({ ...validBooking, roomsRequested: 2 });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.roomsRequested).toBe(2);
+  });
+
+  it("rejects roomsRequested of 0", () => {
+    const result = BookingRequestSchema.safeParse({ ...validBooking, roomsRequested: 0 });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects fractional roomsRequested", () => {
+    const result = BookingRequestSchema.safeParse({ ...validBooking, roomsRequested: 1.5 });
     expect(result.success).toBe(false);
   });
 });

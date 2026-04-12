@@ -20,7 +20,10 @@
       "Bash(npx tsc:*)",
       "Bash(npx next:*)",
       "Bash(grep -v \"^$\")",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('prisma', {}\\), indent=2\\)\\); print\\(json.dumps\\(d.get\\('scripts', {}\\), indent=2\\)\\)\")",
+      "Bash(xargs cat:*)",
+      "Bash(npm test:*)"
     ]
   }
 }

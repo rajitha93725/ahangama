@@ -8,6 +8,7 @@ type User = {
   id: string;
   name: string | null;
   email: string;
+  phone: string | null;
   role: string;
   isActive: boolean;
   createdAt: string;
@@ -109,6 +110,7 @@ export default function AdminUsersPage() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">User</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Mobile</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Activity</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
@@ -122,6 +124,9 @@ export default function AdminUsersPage() {
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{u.name || "—"}</p>
                     <p className="text-xs text-gray-400">{u.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-700">
+                    {u.phone || <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${

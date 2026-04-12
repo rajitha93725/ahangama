@@ -31,6 +31,9 @@ export default function BookingWidget({
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(1);
+  const [roomsRequested, setRoomsRequested] = useState(1);
+  const [availableRooms, setAvailableRooms] = useState<number | null>(null);
+  const [roomsLoading, setRoomsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -45,6 +48,26 @@ export default function BookingWidget({
   const [transportOffer, setTransportOffer] = useState("");
 
   const nights = checkIn && checkOut ? calcNights(checkIn, checkOut) : 0;
+
+  // Fetch available room count whenever dates change (STAY only)
+  const fetchAvailableRooms = async (ci: string, co: string) => {
+    if (!ci || !co || isTransport) return;
+    setRoomsLoading(true);
+    try {
+      const res = await fetch(
+        `/api/properties/${propertyId}/available-rooms?checkIn=${new Date(ci).toISOString()}&checkOut=${new Date(co).toISOString()}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableRooms(data.availableCount ?? 0);
+        setRoomsRequested(1); // reset to 1 whenever dates change
+      }
+    } catch {
+      setAvailableRooms(null);
+    } finally {
+      setRoomsLoading(false);
+    }
+  };
 
   // Transport auto-calculated total
   const suggestedTotal =
@@ -65,6 +88,8 @@ export default function BookingWidget({
       if (nights < 0) { setError("Invalid dates"); return; }
     } else {
       if (nights <= 0) { setError("Please select valid dates"); return; }
+      if (availableRooms === 0) { setError("No rooms available for these dates"); return; }
+      if (availableRooms === null) { setError("Please select dates to check availability"); return; }
       if (parseFloat(offerAmount) < minPrice) {
         setError(`Minimum offer is ${formatCurrency(minPrice)}/night`);
         return;
@@ -88,6 +113,7 @@ export default function BookingWidget({
         checkIn: new Date(checkIn).toISOString(),
         checkOut: new Date(checkOut || checkIn).toISOString(),
         guests,
+        roomsRequested: isTransport ? 1 : roomsRequested,
         offerAmount: finalOffer,
         message,
       };
@@ -337,7 +363,10 @@ export default function BookingWidget({
                 type="date"
                 value={checkIn}
                 min={new Date().toISOString().split("T")[0]}
-                onChange={(e) => setCheckIn(e.target.value)}
+                onChange={(e) => {
+                  setCheckIn(e.target.value);
+                  fetchAvailableRooms(e.target.value, checkOut);
+                }}
                 required
                 className="w-full pl-8 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
               />
@@ -351,13 +380,50 @@ export default function BookingWidget({
                 type="date"
                 value={checkOut}
                 min={checkIn || new Date().toISOString().split("T")[0]}
-                onChange={(e) => setCheckOut(e.target.value)}
+                onChange={(e) => {
+                  setCheckOut(e.target.value);
+                  fetchAvailableRooms(checkIn, e.target.value);
+                }}
                 required
                 className="w-full pl-8 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
               />
             </div>
           </div>
         </div>
+
+        {/* Rooms selector — shown once both dates are set */}
+        {checkIn && checkOut && nights > 0 && (
+          <div>
+            <label className="text-xs font-medium text-gray-700 block mb-1">
+              Number of Rooms
+              {roomsLoading && <span className="ml-2 text-gray-400">checking…</span>}
+              {!roomsLoading && availableRooms !== null && (
+                <span className={`ml-2 font-normal ${availableRooms === 0 ? "text-red-500" : "text-teal-600"}`}>
+                  {availableRooms === 0 ? "No rooms available" : `${availableRooms} available`}
+                </span>
+              )}
+            </label>
+            {availableRooms !== null && availableRooms > 0 ? (
+              <div className="relative">
+                <Users className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <select
+                  value={roomsRequested}
+                  onChange={(e) => setRoomsRequested(parseInt(e.target.value))}
+                  required
+                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none appearance-none"
+                >
+                  {Array.from({ length: availableRooms }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>{n} {n === 1 ? "room" : "rooms"}</option>
+                  ))}
+                </select>
+              </div>
+            ) : availableRooms === 0 ? (
+              <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                Fully booked for these dates — try different dates.
+              </p>
+            ) : null}
+          </div>
+        )}
 
         <div>
           <label className="text-xs font-medium text-gray-700 block mb-1">Guests</label>

@@ -101,12 +101,14 @@ model Property {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  images        PropertyImage[]
-  amenities     PropertyAmenity[]
-  bookings      Booking[]
-  reviews       Review[]
-  savedBy       SavedProperty[]
-  availability  Availability[]
+  images           PropertyImage[]
+  amenities        PropertyAmenity[]
+  bookings         Booking[]
+  reviews          Review[]
+  savedBy          SavedProperty[]
+  availability     Availability[]
+  rooms            Room[]
+  externalBookings ExternalBooking[]
 }
 
 model PropertyImage {
@@ -151,24 +153,58 @@ model SavedProperty {
 
 // ─── BOOKINGS & NEGOTIATION ────────────────────────────────────────────────
 
+model Room {
+  id           String   @id @default(cuid())
+  propertyId   String
+  name         String
+  description  String?
+  maxGuests    Int      @default(2)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  property         Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  bookings         Booking[]
+  externalBookings ExternalBooking[]
+}
+
+model ExternalBooking {
+  id         String   @id @default(cuid())
+  propertyId String
+  roomId     String
+  checkIn    DateTime
+  checkOut   DateTime
+  source     String   // BOOKING_COM | AIRBNB | AGODA | OTHER
+  guestName  String?
+  notes      String?
+  status     String   @default("BOOKED")  // BOOKED | CANCELLED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  property   Property @relation(fields: [propertyId], references: [id])
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}
+
 model Booking {
   id           String   @id @default(cuid())
   propertyId   String
+  roomId       String?  // Optional room assignment (null = property-level / unassigned)
   guestId      String
   checkIn      DateTime
   checkOut     DateTime
-  guests       Int
-  status       String   @default("PENDING_OFFER")  // PENDING_OFFER | COUNTERED | ACCEPTED | REJECTED | CANCELLED | COMPLETED
-  totalPrice   Float?
-  nights       Int
-  pickupPoint  String?  // Transport only
-  dropPoint    String?  // Transport only
-  distanceKm   Float?   // Transport only
+  guests          Int
+  roomsRequested  Int      @default(1)
+  status          String   @default("PENDING_OFFER")  // PENDING_OFFER | COUNTERED | ACCEPTED | REJECTED | CANCELLED | COMPLETED
+  totalPrice      Float?
+  nights          Int
+  pickupPoint     String?  // Transport only
+  dropPoint       String?  // Transport only
+  distanceKm      Float?   // Transport only
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   property   Property @relation(fields: [propertyId], references: [id])
+  room       Room?    @relation(fields: [roomId], references: [id])
   guest      User     @relation("GuestBookings", fields: [guestId], references: [id])
   offers     Offer[]
   review     Review?

@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const result = BookingRequestSchema.safeParse(body);
     if (!result.success) return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
 
-    const { propertyId, checkIn, checkOut, guests, offerAmount, message,
+    const { propertyId, checkIn, checkOut, guests, roomsRequested, offerAmount, message,
             pickupPoint, dropPoint, distanceKm } = result.data;
 
     const checkInDate = new Date(checkIn);
@@ -125,7 +125,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Write transport fields via raw SQL (Prisma client doesn't know these columns yet)
+    // Write columns the stale Prisma client doesn't know about yet
+    const finalRoomsRequested = roomsRequested ?? 1;
+    await prisma.$executeRaw`UPDATE "Booking" SET roomsRequested = ${finalRoomsRequested} WHERE id = ${booking.id}`;
+
     if (isTransport && pickupPoint && dropPoint) {
       await prisma.$executeRaw`
         UPDATE "Booking"

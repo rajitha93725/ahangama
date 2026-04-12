@@ -5,6 +5,7 @@ export const RegisterSchema = z.object({
   email: z.email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   role: z.enum(["GUEST", "HOST"]).default("GUEST"),
+  phone: z.string().regex(/^\+?[0-9\s\-()]{7,20}$/, "Enter a valid mobile number").optional().or(z.literal("")),
 });
 
 export const LoginSchema = z.object({
@@ -70,6 +71,7 @@ export const BookingRequestSchema = z.object({
   checkIn: z.string().datetime(),
   checkOut: z.string().datetime(),
   guests: z.number().int().min(1),
+  roomsRequested: z.number().int().min(1).default(1),
   offerAmount: z.number().min(1),
   message: z.string().max(500).optional(),
   // Transport-only fields

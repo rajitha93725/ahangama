@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { useState } from "react";
-import { Menu, X, MapPin, Bell, User, LogOut, Plus, LayoutDashboard } from "lucide-react";
+import { Menu, X, MapPin, Bell, User, LogOut, Plus, LayoutDashboard, CalendarDays } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 import NotificationBell from "@/components/notification/NotificationBell";
 
@@ -79,6 +79,15 @@ export default function Navbar() {
                       >
                         <Bell className="w-4 h-4" /> My Bookings
                       </Link>
+                      {session.user.role === "HOST" && (
+                        <Link
+                          href="/dashboard/host/calendar"
+                          className="flex items-center gap-2 px-4 py-2 text-sm text-teal-600 hover:bg-teal-50 font-medium"
+                          onClick={() => setProfileOpen(false)}
+                        >
+                          <CalendarDays className="w-4 h-4" /> Booking Calendar
+                        </Link>
+                      )}
                       <Link
                         href="/profile"
                         className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"

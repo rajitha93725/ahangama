@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import BookingStatusBadge from "@/components/booking/BookingStatusBadge";
 import { formatCurrency, formatDateRange } from "@/lib/utils";
-import { Plus, Home, CalendarCheck, DollarSign, Star } from "lucide-react";
+import { Plus, Home, CalendarCheck, DollarSign, Star, CalendarDays } from "lucide-react";
 
 export default async function HostDashboard() {
   const session = await auth();
@@ -45,12 +45,20 @@ export default async function HostDashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Host Dashboard</h1>
           <p className="text-gray-500 text-sm mt-1">Welcome back, {session.user.name?.split(" ")[0]}</p>
         </div>
-        <Link
-          href="/properties/new"
-          className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-medium hover:bg-teal-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" /> New Listing
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/host/calendar"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-teal-200 text-teal-700 rounded-xl text-sm font-medium hover:bg-teal-50 transition-colors"
+          >
+            <CalendarDays className="w-4 h-4" /> Booking Calendar
+          </Link>
+          <Link
+            href="/properties/new"
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-xl text-sm font-medium hover:bg-teal-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> New Listing
+          </Link>
+        </div>
       </div>
 
       {/* Stats */}

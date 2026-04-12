@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PropertySchema, TransportSchema } from "@/lib/validations";
+import { randomUUID } from "crypto";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -125,6 +126,19 @@ export async function POST(req: NextRequest) {
 
     if (isTransport && typeof pricePerKm === "number") {
       await prisma.$executeRaw`UPDATE "Property" SET "pricePerKm" = ${pricePerKm} WHERE "id" = ${property.id}`;
+    }
+
+    // Auto-create rooms for STAY properties based on bedroom count
+    if (!isTransport) {
+      const bedroomCount = (d.bedrooms as number) || 0;
+      const now = new Date().toISOString();
+      for (let i = 1; i <= bedroomCount; i++) {
+        const roomId = randomUUID();
+        await prisma.$queryRawUnsafe(
+          `INSERT INTO "Room" (id, propertyId, name, maxGuests, isActive, createdAt) VALUES (?, ?, ?, 2, 1, ?)`,
+          roomId, property.id, `Room ${i}`, now
+        );
+      }
     }
 
     return NextResponse.json(
