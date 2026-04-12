@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mockPrisma = {
   property: {
     findMany: jest.fn(),
+    findFirst: jest.fn(),
   },
   $queryRawUnsafe: jest.fn(),
   $executeRaw: jest.fn(),
@@ -23,7 +24,7 @@ const makeParams = (id: string) => Promise.resolve({ id }) as Promise<{ id: stri
 // ── GET /api/host/rooms ────────────────────────────────────────────────────
 
 describe("GET /api/host/rooms", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => jest.resetAllMocks());
 
   it("returns 401 when not authenticated", async () => {
     (mockAuth as jest.Mock).mockResolvedValue(null);
@@ -57,7 +58,7 @@ describe("GET /api/host/rooms", () => {
 // ── POST /api/host/rooms ───────────────────────────────────────────────────
 
 describe("POST /api/host/rooms", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => jest.resetAllMocks());
 
   it("returns 401 when not authenticated", async () => {
     (mockAuth as jest.Mock).mockResolvedValue(null);
@@ -79,24 +80,24 @@ describe("POST /api/host/rooms", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 403 when property belongs to another host", async () => {
+  it("returns 404 when property belongs to another host", async () => {
     (mockAuth as jest.Mock).mockResolvedValue({ user: { id: "host-1", role: "HOST" } });
-    mockPrisma.$queryRawUnsafe.mockResolvedValue([]); // no ownership match
+    mockPrisma.property.findFirst.mockResolvedValue(null); // no ownership match
 
     const req = new NextRequest("http://localhost:3000/api/host/rooms", {
       method: "POST",
       body: JSON.stringify({ propertyId: "prop-other", name: "Suite" }),
     });
     const res = await POST(req);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it("creates a room and returns 201", async () => {
     (mockAuth as jest.Mock).mockResolvedValue({ user: { id: "host-1", role: "HOST" } });
-    // ownership check passes
-    mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ id: "prop-1" }]);
-    // INSERT (no return needed)
-    mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([]);
+    // ownership check passes (uses prisma.property.findFirst)
+    mockPrisma.property.findFirst.mockResolvedValue({ id: "prop-1" });
+    // INSERT uses $executeRaw (tagged template)
+    mockPrisma.$executeRaw.mockResolvedValue(1);
     // SELECT new room
     mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([
       { id: "room-new", propertyId: "prop-1", name: "Suite", maxGuests: 2, isActive: 1, createdAt: new Date().toISOString() },
@@ -116,7 +117,7 @@ describe("POST /api/host/rooms", () => {
 // ── PUT /api/host/rooms/[id] ───────────────────────────────────────────────
 
 describe("PUT /api/host/rooms/[id]", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => jest.resetAllMocks());
 
   it("returns 401 when not authenticated", async () => {
     (mockAuth as jest.Mock).mockResolvedValue(null);
@@ -165,7 +166,7 @@ describe("PUT /api/host/rooms/[id]", () => {
 // ── DELETE /api/host/rooms/[id] ────────────────────────────────────────────
 
 describe("DELETE /api/host/rooms/[id]", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => jest.resetAllMocks());
 
   it("returns 401 when not authenticated", async () => {
     (mockAuth as jest.Mock).mockResolvedValue(null);
@@ -205,7 +206,7 @@ describe("DELETE /api/host/rooms/[id]", () => {
 // ── POST /api/host/rooms/provision ─────────────────────────────────────────
 
 describe("POST /api/host/rooms/provision", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => jest.resetAllMocks());
 
   it("returns 401 when not authenticated", async () => {
     (mockAuth as jest.Mock).mockResolvedValue(null);

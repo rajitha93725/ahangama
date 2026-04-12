@@ -10,6 +10,7 @@ const mockPrisma = {
     update: jest.fn(),
   },
   $queryRaw: jest.fn(),
+  $queryRawUnsafe: jest.fn(),
   $executeRaw: jest.fn(),
 };
 
@@ -171,6 +172,7 @@ describe("POST /api/properties", () => {
       images: [],
     });
     mockPrisma.$executeRaw.mockResolvedValue(1);
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([]); // room INSERTs (3 bedrooms)
 
     const req = new NextRequest("http://localhost:3000/api/properties", {
       method: "POST",
@@ -208,6 +210,7 @@ describe("POST /api/properties", () => {
       images: [],
     });
     mockPrisma.$executeRaw.mockResolvedValue(1);
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([]); // room INSERTs (5 bedrooms)
 
     const req = new NextRequest("http://localhost:3000/api/properties", {
       method: "POST",
