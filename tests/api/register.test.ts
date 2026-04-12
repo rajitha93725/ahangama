@@ -38,7 +38,6 @@ jest.mock("bcryptjs", () => ({
 }));
 
 import { POST } from "@/app/api/auth/register/route";
-import { auth } from "@/lib/auth";
 
 describe("POST /api/auth/register", () => {
   beforeEach(() => {
