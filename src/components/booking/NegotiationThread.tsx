@@ -81,9 +81,9 @@ export default function NegotiationThread({
   };
 
   const lastOffer = offers[offers.length - 1];
+  // It's my turn when the last offer was sent by someone else — works for any chain of counter-offers
   const isMyTurn =
-    (status === "PENDING_OFFER" && isHost) ||
-    (status === "COUNTERED" && isGuest);
+    canNegotiate && !!lastOffer && lastOffer.senderId !== currentUserId;
 
   return (
     <div className="space-y-4">
@@ -116,7 +116,10 @@ export default function NegotiationThread({
                     </span>
                   </div>
                   {offer.type !== "REJECTION" && (
-                    <p className="text-lg font-bold">{formatCurrency(offer.amount)}<span className="text-sm font-normal">/night</span></p>
+                    <p className="text-lg font-bold">
+                      {formatCurrency(offer.amount)}
+                      <span className="text-sm font-normal"> total</span>
+                    </p>
                   )}
                   {offer.message && <p className={`text-sm mt-1 ${isMe ? "text-teal-100" : "text-gray-600"}`}>{offer.message}</p>}
                 </div>
@@ -134,19 +137,22 @@ export default function NegotiationThread({
         <div className="border-t border-gray-100 pt-4 space-y-3">
           {lastOffer && (
             <p className="text-sm text-gray-600">
-              Current offer: <strong>{formatCurrency(lastOffer.amount)}/night</strong>
-              {" "}({formatCurrency(lastOffer.amount * nights)} total for {nights} nights)
+              Current offer: <strong>{formatCurrency(lastOffer.amount)} total</strong>
+              {nights > 0 && (
+                <span className="text-gray-400"> · {formatCurrency(lastOffer.amount / nights)}/night × {nights} nights</span>
+              )}
             </p>
           )}
 
-          <div className="flex gap-2">
-            <div className="relative flex-1">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Your counter offer (total amount)</label>
+            <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
               <input
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder={lastOffer ? String(Math.floor(lastOffer.amount * 0.9)) : "Your offer"}
+                placeholder={lastOffer ? String(Math.floor(lastOffer.amount * 0.9)) : "Total offer"}
                 className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
               />
             </div>

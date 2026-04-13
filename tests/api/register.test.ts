@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mockPrisma = {
   user: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   },
@@ -66,6 +67,7 @@ describe("POST /api/auth/register", () => {
         email: "john@example.com",
         password: "password123",
         role: "GUEST",
+        phone: "+94771234567",
       }),
     });
 
@@ -75,8 +77,30 @@ describe("POST /api/auth/register", () => {
     expect(body.error).toBe("Email already registered");
   });
 
+  it("returns 409 if phone already exists", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);  // email free
+    mockPrisma.user.findFirst.mockResolvedValue({ id: "existing-phone" }); // phone taken
+
+    const req = new NextRequest("http://localhost:3000/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "John Doe",
+        email: "john@example.com",
+        password: "password123",
+        role: "GUEST",
+        phone: "+94771234567",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("Phone number already registered");
+  });
+
   it("returns 201 and creates user with pending approval", async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.findFirst.mockResolvedValue(null);
     mockPrisma.user.create.mockResolvedValue({
       id: "new-user-1",
       name: "John Doe",
@@ -91,6 +115,7 @@ describe("POST /api/auth/register", () => {
         email: "john@example.com",
         password: "password123",
         role: "GUEST",
+        phone: "+94771234567",
       }),
     });
 
@@ -111,6 +136,7 @@ describe("POST /api/auth/register", () => {
 
   it("hashes the password before storing", async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.findFirst.mockResolvedValue(null);
     mockPrisma.user.create.mockResolvedValue({
       id: "new-user-2",
       name: "Jane",
@@ -125,6 +151,7 @@ describe("POST /api/auth/register", () => {
         email: "jane@example.com",
         password: "securepass123",
         role: "HOST",
+        phone: "+94712345678",
       }),
     });
 
@@ -139,8 +166,9 @@ describe("POST /api/auth/register", () => {
   });
 
   // ── phone field (added in this session) ──────────────────────────────────
-  it("saves phone number when provided", async () => {
+  it("saves phone number", async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.findFirst.mockResolvedValue(null);
     mockPrisma.user.create.mockResolvedValue({
       id: "new-user-3",
       name: "Sam",
@@ -167,15 +195,7 @@ describe("POST /api/auth/register", () => {
     );
   });
 
-  it("stores phone as null when omitted", async () => {
-    mockPrisma.user.findUnique.mockResolvedValue(null);
-    mockPrisma.user.create.mockResolvedValue({
-      id: "new-user-4",
-      name: "Nimal",
-      email: "nimal@example.com",
-      role: "GUEST",
-    });
-
+  it("returns 400 when phone is omitted (now required)", async () => {
     const req = new NextRequest("http://localhost:3000/api/auth/register", {
       method: "POST",
       body: JSON.stringify({
@@ -183,15 +203,12 @@ describe("POST /api/auth/register", () => {
         email: "nimal@example.com",
         password: "password123",
         role: "GUEST",
+        // phone intentionally omitted
       }),
     });
 
-    await POST(req);
-    expect(mockPrisma.user.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ phone: null }),
-      })
-    );
+    const res = await POST(req);
+    expect(res.status).toBe(400);
   });
 
   it("returns 400 for invalid phone format", async () => {

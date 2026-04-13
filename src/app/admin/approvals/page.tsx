@@ -20,7 +20,7 @@ type PendingProperty = {
   category: string;
   pricePerNight: number;
   createdAt: string;
-  host: { name: string | null; email: string };
+  host: { name: string | null; email: string; phone?: string | null };
   type: "property";
 };
 
@@ -190,6 +190,9 @@ export default function AdminApprovalsPage() {
                       <p className="text-sm text-gray-500">{p.district} · ${p.pricePerNight}/night</p>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-xs text-gray-400">by {p.host.name || p.host.email}</span>
+                        {p.host.phone && (
+                          <span className="text-xs text-teal-600 font-medium">📞 {p.host.phone}</span>
+                        )}
                         <span className="text-xs text-gray-400">·</span>
                         <span className="text-xs text-gray-400">
                           Submitted {new Date(p.createdAt).toLocaleDateString()}

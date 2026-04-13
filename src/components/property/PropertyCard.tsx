@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { MapPin, Star, Users, BedDouble } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { useLKRRate } from "@/hooks/useLKRRate";
 
 interface PropertyCardProps {
   id: string;
@@ -23,6 +24,8 @@ export default function PropertyCard({
   maxGuests, bedrooms, avgRating, reviewCount, images, host,
 }: PropertyCardProps) {
   const img = images[0]?.url || "/images/placeholder.jpg";
+  const lkrRate = useLKRRate();
+  const lkrPrice = lkrRate ? Math.round(pricePerNight * lkrRate) : null;
 
   return (
     <Link href={`/properties/${id}`} className="group block">
@@ -66,6 +69,11 @@ export default function PropertyCard({
             <div>
               <span className="text-base font-bold text-gray-900">{formatCurrency(pricePerNight)}</span>
               <span className="text-xs text-gray-500"> / night</span>
+              {lkrPrice !== null && (
+                <span className="block text-xs text-gray-400 mt-0.5">
+                  ≈ LKR {lkrPrice.toLocaleString()}/night
+                </span>
+              )}
             </div>
             <div className="text-xs text-teal-600 font-medium">Price negotiable</div>
           </div>

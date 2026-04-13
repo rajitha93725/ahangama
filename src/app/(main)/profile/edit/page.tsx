@@ -106,7 +106,7 @@ export default function EditProfilePage() {
               ))}
             </div>
             {role === "HOST" && (
-              <p className="text-xs text-teal-600 mt-2">As a host, you'll be able to list properties and receive booking offers.</p>
+              <p className="text-xs text-teal-600 mt-2">As a host, you will be able to list properties and receive booking offers.</p>
             )}
           </div>
         )}

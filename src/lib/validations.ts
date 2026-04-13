@@ -5,11 +5,11 @@ export const RegisterSchema = z.object({
   email: z.email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   role: z.enum(["GUEST", "HOST"]).default("GUEST"),
-  phone: z.string().regex(/^\+?[0-9\s\-()]{7,20}$/, "Enter a valid mobile number").optional().or(z.literal("")),
+  phone: z.string().regex(/^\+?[0-9\s\-()]{7,20}$/, "Enter a valid mobile number"),
 });
 
 export const LoginSchema = z.object({
-  email: z.email("Invalid email address"),
+  identifier: z.string().min(1, "Email or phone number is required"),
   password: z.string().min(1, "Password is required"),
 });
 

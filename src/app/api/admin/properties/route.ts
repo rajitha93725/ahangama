@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       status: true,
       pricePerNight: true,
       createdAt: true,
-      host: { select: { name: true, email: true } },
+      host: { select: { name: true, email: true, phone: true } },
     },
   });
 

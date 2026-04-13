@@ -16,6 +16,7 @@ describe("RegisterSchema", () => {
     email: "john@example.com",
     password: "password123",
     role: "GUEST" as const,
+    phone: "+94771234567",
   };
 
   it("accepts valid registration data", () => {
@@ -66,14 +67,15 @@ describe("RegisterSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts empty string for phone (optional)", () => {
+  it("rejects empty string for phone (now required)", () => {
     const result = RegisterSchema.safeParse({ ...validData, phone: "" });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
-  it("accepts missing phone (optional)", () => {
-    const result = RegisterSchema.safeParse(validData);
-    expect(result.success).toBe(true);
+  it("rejects missing phone (now required)", () => {
+    const { phone: _p, ...withoutPhone } = validData;
+    const result = RegisterSchema.safeParse(withoutPhone);
+    expect(result.success).toBe(false);
   });
 
   it("rejects phone that is too short", () => {
@@ -88,17 +90,25 @@ describe("RegisterSchema", () => {
 });
 
 describe("LoginSchema", () => {
-  it("accepts valid login data", () => {
+  it("accepts login with email", () => {
     const result = LoginSchema.safeParse({
-      email: "john@example.com",
+      identifier: "john@example.com",
       password: "mypassword",
     });
     expect(result.success).toBe(true);
   });
 
-  it("rejects invalid email", () => {
+  it("accepts login with phone number", () => {
     const result = LoginSchema.safeParse({
-      email: "invalid",
+      identifier: "+94771234567",
+      password: "mypassword",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects empty identifier", () => {
+    const result = LoginSchema.safeParse({
+      identifier: "",
       password: "mypassword",
     });
     expect(result.success).toBe(false);
@@ -106,7 +116,7 @@ describe("LoginSchema", () => {
 
   it("rejects empty password", () => {
     const result = LoginSchema.safeParse({
-      email: "john@example.com",
+      identifier: "john@example.com",
       password: "",
     });
     expect(result.success).toBe(false);

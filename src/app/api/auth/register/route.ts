@@ -12,14 +12,19 @@ export async function POST(req: NextRequest) {
 
   const { name, email, password, role, phone } = result.data;
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
+  const existingEmail = await prisma.user.findUnique({ where: { email } });
+  if (existingEmail) {
     return NextResponse.json({ error: "Email already registered" }, { status: 409 });
+  }
+
+  const existingPhone = await prisma.user.findFirst({ where: { phone } });
+  if (existingPhone) {
+    return NextResponse.json({ error: "Phone number already registered" }, { status: 409 });
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { name, email, passwordHash, role, isActive: false, phone: phone || null },
+    data: { name, email, passwordHash, role, isActive: false, phone },
     select: { id: true, name: true, email: true, role: true },
   });
 

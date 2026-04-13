@@ -103,7 +103,13 @@ export default function PropertyForm() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(data.error));
+      if (!res.ok) {
+        if (data.error?.fieldErrors) {
+          const msgs = Object.values(data.error.fieldErrors as Record<string, string[]>).flat();
+          throw new Error(msgs.join(" · "));
+        }
+        throw new Error(data.error || "Failed to create listing");
+      }
 
       // Upload images to property
       if (images.length > 0) {

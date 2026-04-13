@@ -117,7 +117,7 @@ export default function RegisterForm() {
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Mobile Number <span className="text-gray-400 font-normal">(optional)</span>
+          Mobile Number <span className="text-red-500">*</span>
         </label>
         <div className="relative">
           <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -125,6 +125,7 @@ export default function RegisterForm() {
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
+            required
             placeholder="+94 77 123 4567"
             className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none text-sm"
           />

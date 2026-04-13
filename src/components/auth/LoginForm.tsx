@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { Eye, EyeOff, Phone, Lock } from "lucide-react";
 
 interface Props {
   callbackUrl?: string;
@@ -12,7 +12,7 @@ interface Props {
 
 export default function LoginForm({ callbackUrl = "/" }: Props) {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ export default function LoginForm({ callbackUrl = "/" }: Props) {
     setLoading(true);
     setError("");
     const result = await signIn("credentials", {
-      email,
+      identifier,
       password,
       redirect: false,
     });
@@ -43,15 +43,15 @@ export default function LoginForm({ callbackUrl = "/" }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Email or Phone Number</label>
         <div className="relative">
-          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            type="text"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
             required
-            placeholder="you@example.com"
+            placeholder="you@example.com or +94 77 123 4567"
             className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none text-sm"
           />
         </div>
