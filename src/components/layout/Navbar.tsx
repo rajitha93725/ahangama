@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { useState } from "react";
-import { Menu, X, MapPin, Bell, User, LogOut, Plus, LayoutDashboard, CalendarDays } from "lucide-react";
+import { Menu, X, MapPin, Bell, User, LogOut, Plus, LayoutDashboard, CalendarDays, Compass } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 import NotificationBell from "@/components/notification/NotificationBell";
 
@@ -23,13 +23,37 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-6">
-            <Link href="/properties" className="text-gray-600 hover:text-teal-600 text-sm font-medium transition-colors">
-              Explore
-            </Link>
-            {session?.user.role === "HOST" && (
-              <Link href="/properties/new" className="flex items-center gap-1 text-gray-600 hover:text-teal-600 text-sm font-medium">
-                <Plus className="w-4 h-4" /> List Property
+          <nav className="hidden md:flex items-center gap-2">
+            {session?.user.role === "HOST" ? (
+              <>
+                {/* Explore */}
+                <Link
+                  href="/properties"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-teal-200 bg-teal-50 text-teal-700 text-sm font-medium hover:bg-teal-100 hover:border-teal-300 transition-all"
+                >
+                  <Compass className="w-4 h-4" />
+                  Explore
+                </Link>
+                {/* Booking Calendar */}
+                <Link
+                  href="/dashboard/host/calendar"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-teal-600 text-white text-sm font-medium hover:bg-teal-700 shadow-sm hover:shadow-md transition-all"
+                >
+                  <CalendarDays className="w-4 h-4" />
+                  Booking Calendar
+                </Link>
+                {/* List Property */}
+                <Link
+                  href="/properties/new"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-sm font-semibold shadow-sm hover:shadow-lg hover:from-teal-600 hover:to-cyan-600 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  List Property
+                </Link>
+              </>
+            ) : (
+              <Link href="/properties" className="text-gray-600 hover:text-teal-600 text-sm font-medium transition-colors">
+                Explore
               </Link>
             )}
           </nav>
@@ -158,9 +182,22 @@ export default function Navbar() {
                 Dashboard
               </Link>
               {session.user.role === "HOST" && (
-                <Link href="/properties/new" className="block text-gray-700 hover:text-teal-600" onClick={() => setMobileOpen(false)}>
-                  List Property
-                </Link>
+                <>
+                  <Link
+                    href="/dashboard/host/calendar"
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 text-white font-medium text-sm"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <CalendarDays className="w-4 h-4" /> Booking Calendar
+                  </Link>
+                  <Link
+                    href="/properties/new"
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold text-sm"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <Plus className="w-4 h-4" /> List Property
+                  </Link>
+                </>
               )}
               <button onClick={() => signOut({ callbackUrl: "/" })} className="block w-full text-left text-red-600 font-medium">
                 Sign Out
