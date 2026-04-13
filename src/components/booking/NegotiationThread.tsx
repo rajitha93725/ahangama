@@ -52,8 +52,11 @@ export default function NegotiationThread({
 
   const canNegotiate = ["PENDING_OFFER", "COUNTERED"].includes(status) && (isGuest || isHost);
 
-  const sendOffer = async (type: "COUNTER_OFFER" | "ACCEPTANCE" | "REJECTION") => {
-    const offerAmount = type === "REJECTION" ? (offers[offers.length - 1]?.amount || 0) : parseFloat(amount);
+  const sendOffer = async (type: "COUNTER_OFFER" | "ACCEPTANCE" | "REJECTION", fixedAmount?: number) => {
+    const offerAmount =
+      fixedAmount !== undefined ? fixedAmount :
+      type === "REJECTION" ? (offers[offers.length - 1]?.amount || 0) :
+      parseFloat(amount);
     if (type !== "REJECTION" && (!offerAmount || offerAmount <= 0)) {
       setError("Please enter a valid amount");
       return;
@@ -70,7 +73,7 @@ export default function NegotiationThread({
       if (!res.ok) throw new Error(data.error || "Failed to send offer");
       onOfferSent(data);
       const newStatus = type === "ACCEPTANCE" ? "ACCEPTED" : type === "REJECTION" ? "REJECTED" : "COUNTERED";
-      onStatusChange(newStatus, type === "ACCEPTANCE" ? offerAmount * nights : undefined);
+      onStatusChange(newStatus, type === "ACCEPTANCE" ? offerAmount : undefined);
       setAmount("");
       setMessage("");
     } catch (e: unknown) {
@@ -133,64 +136,65 @@ export default function NegotiationThread({
       </div>
 
       {/* Action area */}
-      {canNegotiate && isMyTurn && (
+      {canNegotiate && isMyTurn && lastOffer && (
         <div className="border-t border-gray-100 pt-4 space-y-3">
-          {lastOffer && (
-            <p className="text-sm text-gray-600">
-              Current offer: <strong>{formatCurrency(lastOffer.amount)} total</strong>
+          {/* Accept / Decline — fixed to the last offer amount, no editing */}
+          <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
+            <p className="text-sm text-gray-700">
+              Accept the current offer of{" "}
+              <strong className="text-green-700">{formatCurrency(lastOffer.amount)} total</strong>
               {nights > 0 && (
-                <span className="text-gray-400"> · {formatCurrency(lastOffer.amount / nights)}/night × {nights} nights</span>
+                <span className="text-gray-500"> ({formatCurrency(lastOffer.amount / nights)}/night × {nights} nights)</span>
               )}
             </p>
-          )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => sendOffer("ACCEPTANCE", lastOffer.amount)}
+                disabled={submitting}
+                className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
+                ✓ Accept {formatCurrency(lastOffer.amount)}
+              </button>
+              <button
+                onClick={() => sendOffer("REJECTION")}
+                disabled={submitting}
+                className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
+              >
+                Decline
+              </button>
+            </div>
+          </div>
 
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Your counter offer (total amount)</label>
+          {/* Counter offer — separate section */}
+          <div className="border border-gray-200 rounded-xl p-3 space-y-2">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Or make a counter offer</p>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
               <input
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder={lastOffer ? String(Math.floor(lastOffer.amount * 0.9)) : "Total offer"}
+                placeholder={String(Math.floor(lastOffer.amount * 0.9))}
                 className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
               />
             </div>
-          </div>
-
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Optional message..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-          />
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
-          <div className="flex gap-2">
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Optional message..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+            />
             <button
               onClick={() => sendOffer("COUNTER_OFFER")}
               disabled={submitting}
-              className="flex-1 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              className="w-full py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors"
             >
-              Counter Offer
-            </button>
-            <button
-              onClick={() => { setAmount(String(lastOffer?.amount || "")); sendOffer("ACCEPTANCE"); }}
-              disabled={submitting}
-              className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
-            >
-              Accept
-            </button>
-            <button
-              onClick={() => sendOffer("REJECTION")}
-              disabled={submitting}
-              className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
-            >
-              Decline
+              Send Counter Offer
             </button>
           </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
       )}
 

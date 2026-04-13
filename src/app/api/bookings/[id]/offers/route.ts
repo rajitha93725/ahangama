@@ -185,7 +185,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Invalid status transition" }, { status: 400 });
   }
 
-  const totalPrice = type === "ACCEPTANCE" ? amount * booking.nights : undefined;
+  // For acceptance: must match the last offer exactly and cannot accept your own offer
+  if (type === "ACCEPTANCE") {
+    const lastOffer = await prisma.offer.findFirst({
+      where: { bookingId: id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!lastOffer) {
+      return NextResponse.json({ error: "No offer to accept" }, { status: 400 });
+    }
+    if (lastOffer.senderId === session.user.id) {
+      return NextResponse.json({ error: "Cannot accept your own offer" }, { status: 403 });
+    }
+    if (Math.abs(amount - lastOffer.amount) > 0.01) {
+      return NextResponse.json({ error: "Acceptance amount must match the current offer" }, { status: 400 });
+    }
+  }
+
+  // Amount stored is the total (not per-night), so totalPrice = amount directly
+  const totalPrice = type === "ACCEPTANCE" ? amount : undefined;
 
   const [offer] = await prisma.$transaction([
     prisma.offer.create({
