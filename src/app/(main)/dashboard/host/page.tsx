@@ -100,27 +100,28 @@ export default async function HostDashboard() {
           ) : (
             <div className="space-y-3">
               {properties.map((p) => (
-                <Link
-                  key={p.id}
-                  href={`/properties/${p.id}`}
-                  className="flex gap-3 p-3 bg-white rounded-xl border border-gray-200 hover:shadow-sm transition-shadow"
-                >
-                  <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
+                <div key={p.id} className="flex gap-3 p-3 bg-white rounded-xl border border-gray-200 hover:shadow-sm transition-shadow">
+                  <Link href={`/properties/${p.id}`} className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                     {p.images[0]?.url && <img src={p.images[0].url} alt={p.title} className="w-full h-full object-cover" />}
-                  </div>
+                  </Link>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{p.title}</p>
+                    <Link href={`/properties/${p.id}`}>
+                      <p className="text-sm font-medium text-gray-900 truncate hover:text-teal-600">{p.title}</p>
+                    </Link>
                     <p className="text-xs text-gray-400 mt-0.5">{p.bookings.length} confirmed bookings</p>
                     <p className="text-xs text-teal-600 font-medium mt-1">
                       {formatCurrency(p.bookings.reduce((s, b) => s + (b.totalPrice || 0), 0))} earned
                     </p>
+                    <Link href={`/properties/${p.id}/edit`} className="text-xs text-gray-400 hover:text-teal-600 hover:underline mt-1 inline-block">
+                      Edit pricing & meal plan →
+                    </Link>
                   </div>
                   <span className={`self-start px-2 py-0.5 rounded-full text-xs font-medium ${
                     p.status === "ACTIVE" ? "bg-green-100 text-green-700" :
                     p.status === "PENDING_APPROVAL" ? "bg-orange-100 text-orange-700" :
                     "bg-gray-100 text-gray-600"
                   }`}>{p.status === "PENDING_APPROVAL" ? "Pending" : p.status}</span>
-                </Link>
+                </div>
               ))}
             </div>
           )}

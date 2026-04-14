@@ -100,30 +100,29 @@ export default function PropertyCard({
               {isTransport ? (
                 <>
                   {(pricePerKm ?? 0) > 0 && (
-                    <div className="flex items-center gap-1 text-sm">
+                    <div className="flex items-center gap-1 text-sm flex-wrap">
                       <Navigation className="w-3 h-3 text-amber-500 flex-shrink-0" />
                       <span className="font-bold text-gray-900">{formatCurrency(pricePerKm!)}</span>
                       <span className="text-xs text-gray-500">/km</span>
-                      {lkrKmPrice !== null && <span className="text-xs text-gray-400">≈ LKR {lkrKmPrice.toLocaleString()}</span>}
+                      {lkrKmPrice !== null && <span className="text-xs text-gray-400">· LKR {lkrKmPrice.toLocaleString()}</span>}
                     </div>
                   )}
                   {pricePerNight > 0 && (
-                    <div className="flex items-center gap-1 text-xs mt-0.5">
+                    <div className="flex items-center gap-1 text-xs mt-0.5 flex-wrap">
                       <Car className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                      <span className="font-semibold text-gray-700">{formatCurrency(pricePerNight)}</span>
-                      <span className="text-gray-500">/night parking</span>
-                      {lkrPrice !== null && <span className="text-gray-400">≈ LKR {lkrPrice.toLocaleString()}</span>}
+                      <span className="font-semibold text-gray-700">{formatCurrency(pricePerNight)}/night</span>
+                      {lkrPrice !== null && <span className="text-gray-400">· LKR {lkrPrice.toLocaleString()}</span>}
                     </div>
                   )}
                 </>
               ) : (
                 <>
-                  <span className="text-base font-bold text-gray-900">{formatCurrency(pricePerNight)}</span>
-                  <span className="text-xs text-gray-500"> / night</span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-base font-bold text-gray-900">{formatCurrency(pricePerNight)}</span>
+                    <span className="text-xs text-gray-500">/night</span>
+                  </div>
                   {lkrPrice !== null && (
-                    <span className="block text-xs text-gray-400 mt-0.5">
-                      ≈ LKR {lkrPrice.toLocaleString()}/night
-                    </span>
+                    <p className="text-xs text-gray-400">≈ LKR {lkrPrice.toLocaleString()}/night</p>
                   )}
                 </>
               )}

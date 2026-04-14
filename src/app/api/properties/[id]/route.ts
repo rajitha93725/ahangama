@@ -22,10 +22,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Enrich with columns the stale Prisma client doesn't know about
-  const extras = await prisma.$queryRaw<{ category: string; pricePerKm: number | null }[]>`
-    SELECT category, pricePerKm FROM "Property" WHERE id = ${id}
+  const extras = await prisma.$queryRaw<{ category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }[]>`
+    SELECT category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard FROM "Property" WHERE id = ${id}
   `;
-  const { category = "STAY", pricePerKm = null } = extras[0] ?? {};
+  const { category = "STAY", pricePerKm = null, mealPlan = "ROOM_ONLY", priceBnB = null, priceHalfBoard = null, priceFullBoard = null } = extras[0] ?? {};
 
   const avgRating =
     property.reviews.length > 0
@@ -44,8 +44,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const propertyRatingCount = prRows.filter((r) => !("isSeeded" in r)).length || prRows.length;
 
   return NextResponse.json({
-    ...property, category, pricePerKm, avgRating, reviewCount: property.reviews.length,
-    propertyRating, propertyRatingCount,
+    ...property, category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard,
+    avgRating, reviewCount: property.reviews.length, propertyRating, propertyRatingCount,
   });
 }
 
@@ -61,6 +61,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const body = await req.json();
+  // Extract raw columns before schema validation
+  const rawPricePerKm = typeof body.pricePerKm === "number" ? body.pricePerKm : undefined;
+  const rawMealPlan = typeof body.mealPlan === "string" ? body.mealPlan : undefined;
+
   const result = PropertySchema.partial().safeParse(body);
   if (!result.success) return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
 
@@ -79,6 +83,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     },
     include: { amenities: true, images: true },
   });
+
+  // Update raw columns the Prisma client doesn't know about
+  const rawPriceBnB = body.priceBnB !== undefined ? (body.priceBnB === null ? null : Number(body.priceBnB)) : undefined;
+  const rawPriceHalf = body.priceHalfBoard !== undefined ? (body.priceHalfBoard === null ? null : Number(body.priceHalfBoard)) : undefined;
+  const rawPriceFull = body.priceFullBoard !== undefined ? (body.priceFullBoard === null ? null : Number(body.priceFullBoard)) : undefined;
+
+  const rawCols = [
+    rawPricePerKm !== undefined && [`"pricePerKm"`, rawPricePerKm],
+    rawMealPlan !== undefined && [`"mealPlan"`, rawMealPlan],
+    rawPriceBnB !== undefined && [`"priceBnB"`, rawPriceBnB],
+    rawPriceHalf !== undefined && [`"priceHalfBoard"`, rawPriceHalf],
+    rawPriceFull !== undefined && [`"priceFullBoard"`, rawPriceFull],
+  ].filter(Boolean) as [string, unknown][];
+
+  if (rawCols.length > 0) {
+    const sets = rawCols.map(([col]) => `${col} = ?`).join(", ");
+    const vals = [...rawCols.map(([, v]) => v), id];
+    await prisma.$queryRawUnsafe(`UPDATE "Property" SET ${sets} WHERE id = ?`, ...vals);
+  }
 
   return NextResponse.json(updated);
 }

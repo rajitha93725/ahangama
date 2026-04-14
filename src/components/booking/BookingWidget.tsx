@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { formatCurrency, calcNights } from "@/lib/utils";
 import { useLKRRate } from "@/hooks/useLKRRate";
 import { Calendar, Users, MapPin, Navigation, Car } from "lucide-react";
+import { MEAL_PLANS } from "@/lib/constants";
 
 interface Props {
   propertyId: string;
@@ -14,6 +15,9 @@ interface Props {
   maxGuests: number;
   category?: string;
   pricePerKm?: number;
+  priceBnB?: number | null;
+  priceHalfBoard?: number | null;
+  priceFullBoard?: number | null;
 }
 
 export default function BookingWidget({
@@ -23,6 +27,9 @@ export default function BookingWidget({
   maxGuests,
   category = "STAY",
   pricePerKm = 0,
+  priceBnB = null,
+  priceHalfBoard = null,
+  priceFullBoard = null,
 }: Props) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -41,6 +48,21 @@ export default function BookingWidget({
 
   // Stay-only
   const [offerAmount, setOfferAmount] = useState(String(pricePerNight));
+  const [mealPlan, setMealPlan] = useState("ROOM_ONLY");
+
+  // Map each meal plan to its per-night price (null = not available)
+  const mealPlanPrices: Record<string, number | null> = {
+    ROOM_ONLY: pricePerNight,
+    BED_BREAKFAST: priceBnB ?? null,
+    HALF_BOARD: priceHalfBoard ?? null,
+    FULL_BOARD: priceFullBoard ?? null,
+  };
+
+  const selectMealPlan = (value: string) => {
+    setMealPlan(value);
+    const price = mealPlanPrices[value];
+    if (price !== null && price !== undefined) setOfferAmount(String(price));
+  };
 
   // Transport-only
   const [pickupPoint, setPickupPoint] = useState("");
@@ -118,6 +140,7 @@ export default function BookingWidget({
         roomsRequested: isTransport ? 1 : roomsRequested,
         offerAmount: finalOffer,
         message,
+        mealPlan: isTransport ? undefined : mealPlan,
       };
       if (isTransport) {
         payload.pickupPoint = pickupPoint;
@@ -475,6 +498,35 @@ export default function BookingWidget({
               {nights > 0 && <> · LKR {Math.round(parseFloat(offerAmount) * nights * lkrRate).toLocaleString()} total</>}
             </p>
           )}
+        </div>
+
+        {/* Meal Plan */}
+        <div>
+          <label className="text-xs font-medium text-gray-700 block mb-1.5">Meal Plan</label>
+          <div className="grid grid-cols-1 gap-1.5">
+            {MEAL_PLANS.map((m) => {
+              const price = mealPlanPrices[m.value];
+              if (price === null) return null; // host didn't set a price — hide option
+              return (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => selectMealPlan(m.value)}
+                  className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                    mealPlan === m.value
+                      ? "border-teal-500 bg-teal-50 text-teal-700"
+                      : "border-gray-200 text-gray-600 hover:border-gray-300"
+                  }`}
+                >
+                  <span>{m.label}</span>
+                  <span className={`font-semibold ${mealPlan === m.value ? "text-teal-700" : "text-gray-700"}`}>
+                    {formatCurrency(price)}/night
+                    {lkrRate && <span className="font-normal text-gray-400 ml-1">≈ LKR {Math.round(price * lkrRate).toLocaleString()}</span>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>

@@ -160,6 +160,9 @@ export default async function PropertyDetailPage({ params }: Props) {
             maxGuests={property.maxGuests}
             category={property.category ?? "STAY"}
             pricePerKm={property.pricePerKm ?? 0}
+            priceBnB={property.priceBnB ?? null}
+            priceHalfBoard={property.priceHalfBoard ?? null}
+            priceFullBoard={property.priceFullBoard ?? null}
           />
         </div>
       </div>

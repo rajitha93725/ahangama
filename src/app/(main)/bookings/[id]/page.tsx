@@ -8,7 +8,8 @@ import StarRating from "@/components/shared/StarRating";
 import { formatDateRange, formatCurrency, getInitials } from "@/lib/utils";
 import { ratingToStars } from "@/lib/ratingQuestions";
 import Link from "next/link";
-import { MapPin, Calendar, Users, ArrowLeft, Navigation, Car, Star } from "lucide-react";
+import { MapPin, Calendar, Users, ArrowLeft, Navigation, Car, Star, UtensilsCrossed } from "lucide-react";
+import { MEAL_PLANS } from "@/lib/constants";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -39,16 +40,16 @@ export default async function BookingDetailPage({ params }: Props) {
 
   if (!booking) notFound();
 
-  // Enrich with transport fields (stale Prisma client doesn't know them)
+  // Enrich with raw columns (stale Prisma client doesn't know them)
   const transportRow = await prisma.$queryRaw<
-    { pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null; category: string }[]
+    { pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null; category: string; mealPlan: string }[]
   >`
-    SELECT b.pickupPoint, b.dropPoint, b.distanceKm, p.category
+    SELECT b.pickupPoint, b.dropPoint, b.distanceKm, b.mealPlan, p.category
     FROM "Booking" b
     JOIN "Property" p ON p.id = b.propertyId
     WHERE b.id = ${id}
   `;
-  const transportInfo = transportRow[0] ?? { pickupPoint: null, dropPoint: null, distanceKm: null, category: "STAY" };
+  const transportInfo = transportRow[0] ?? { pickupPoint: null, dropPoint: null, distanceKm: null, category: "STAY", mealPlan: "ROOM_ONLY" };
   const isTransportBooking = transportInfo.category === "TRANSPORT";
 
   const isGuest = booking.guestId === session.user.id;
@@ -66,13 +67,13 @@ export default async function BookingDetailPage({ params }: Props) {
       : null;
 
   // Check if this guest has already rated this booking
-  const hasRated =
-    isGuest && booking.status === "COMPLETED"
-      ? (await prisma.$queryRawUnsafe<{ id: string }[]>(
-          `SELECT id FROM "PropertyRating" WHERE bookingId = ? LIMIT 1`,
-          booking.id
-        )).length > 0
-      : false;
+  const canRate = isGuest && (booking.status === "ACCEPTED" || booking.status === "COMPLETED");
+  const hasRated = canRate
+    ? (await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM "PropertyRating" WHERE bookingId = ? LIMIT 1`,
+        booking.id
+      )).length > 0
+    : false;
 
   const property = booking.property;
 
@@ -178,6 +179,24 @@ export default async function BookingDetailPage({ params }: Props) {
                     <p>{booking.guests} guests · {booking.nights} nights</p>
                   </div>
                 </div>
+                {transportInfo.mealPlan && transportInfo.mealPlan !== "ROOM_ONLY" && (
+                  <div className="flex items-center gap-2 text-gray-600 col-span-2">
+                    <UtensilsCrossed className="w-4 h-4 text-teal-500" />
+                    <div>
+                      <p className="text-xs text-gray-400 mb-0.5">Meal Plan</p>
+                      <p>{MEAL_PLANS.find((m) => m.value === transportInfo.mealPlan)?.label ?? transportInfo.mealPlan}</p>
+                    </div>
+                  </div>
+                )}
+                {transportInfo.mealPlan === "ROOM_ONLY" && (
+                  <div className="flex items-center gap-2 text-gray-600 col-span-2">
+                    <UtensilsCrossed className="w-4 h-4 text-teal-500" />
+                    <div>
+                      <p className="text-xs text-gray-400 mb-0.5">Meal Plan</p>
+                      <p>Room Only</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -248,15 +267,15 @@ export default async function BookingDetailPage({ params }: Props) {
             />
           </div>
 
-          {/* Rating form: shown to guest after booking is COMPLETED and not yet rated */}
-          {isGuest && booking.status === "COMPLETED" && !hasRated && (
+          {/* Rating form: shown to guest after booking is ACCEPTED or COMPLETED */}
+          {canRate && !hasRated && (
             <RatingForm
               propertyId={booking.propertyId}
               bookingId={booking.id}
               isTransport={isTransportBooking}
             />
           )}
-          {isGuest && booking.status === "COMPLETED" && hasRated && (
+          {canRate && hasRated && (
             <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 text-center">
               <p className="text-sm text-teal-700 font-medium">You have already rated this booking.</p>
             </div>

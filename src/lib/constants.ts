@@ -68,6 +68,13 @@ export const TRANSPORT_TYPES = [
   { value: "BICYCLE", label: "Bicycle" },
 ] as const;
 
+export const MEAL_PLANS = [
+  { value: "ROOM_ONLY", label: "Room Only", short: "RO", color: "bg-gray-100 text-gray-600" },
+  { value: "BED_BREAKFAST", label: "Bed & Breakfast", short: "B&B", color: "bg-amber-100 text-amber-700" },
+  { value: "HALF_BOARD", label: "Half Board", short: "HB", color: "bg-orange-100 text-orange-700" },
+  { value: "FULL_BOARD", label: "Full Board", short: "FB", color: "bg-teal-100 text-teal-700" },
+] as const;
+
 export const BOOKING_STATUS_LABELS: Record<string, string> = {
   PENDING_OFFER: "Awaiting Response",
   COUNTERED: "Counter Offer Received",

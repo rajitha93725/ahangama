@@ -139,7 +139,7 @@ export default function TransportForm() {
         ));
       }
 
-      router.push(`/properties/${data.id}`);
+      router.push(`/dashboard/host`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create listing");
     } finally {

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Search, Home, Car } from "lucide-react";
+import { Search, Home, Car, Star } from "lucide-react";
+import { STAY_QUESTIONS, TRANSPORT_QUESTIONS } from "@/lib/ratingQuestions";
 
 type Property = {
   id: string;
@@ -12,6 +13,12 @@ type Property = {
   pricePerNight: number;
   createdAt: string;
   host: { name: string | null; email: string };
+};
+
+type RatingRow = {
+  q1: number; q2: number; q3: number; q4: number; q5: number;
+  q6: number; q7: number; q8: number; q9: number; q10: number;
+  avgScore: number;
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -28,6 +35,12 @@ export default function AdminPropertiesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [actioning, setActioning] = useState<string | null>(null);
+
+  // Rating modal state
+  const [ratingModal, setRatingModal] = useState<{ property: Property; scores: number[] } | null>(null);
+  const [ratingLoading, setRatingLoading] = useState(false);
+  const [ratingSaving, setRatingSaving] = useState(false);
+  const [ratingSaved, setRatingSaved] = useState<string | null>(null); // shows toast with property title
 
   const fetchProperties = useCallback(async () => {
     setLoading(true);
@@ -52,8 +65,53 @@ export default function AdminPropertiesPage() {
     setActioning(null);
   };
 
+  const openRatingModal = async (property: Property) => {
+    setRatingLoading(true);
+    const res = await fetch(`/api/admin/properties/${property.id}/rating`);
+    let existing: RatingRow | null = null;
+    if (res.ok) existing = await res.json();
+    const defaultScores = Array(10).fill(10);
+    if (existing) {
+      const scores = [existing.q1, existing.q2, existing.q3, existing.q4, existing.q5,
+                      existing.q6, existing.q7, existing.q8, existing.q9, existing.q10];
+      setRatingModal({ property, scores });
+    } else {
+      setRatingModal({ property, scores: defaultScores });
+    }
+    setRatingLoading(false);
+  };
+
+  const saveRating = async () => {
+    if (!ratingModal) return;
+    setRatingSaving(true);
+    const { property, scores } = ratingModal;
+    const body: Record<string, number> = {};
+    scores.forEach((v, i) => { body[`q${i + 1}`] = v; });
+    await fetch(`/api/admin/properties/${property.id}/rating`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setRatingSaving(false);
+    setRatingSaved(property.title);
+    setRatingModal(null);
+    setTimeout(() => setRatingSaved(null), 4000);
+  };
+
+  const questions = ratingModal?.property.category === "TRANSPORT" ? TRANSPORT_QUESTIONS : STAY_QUESTIONS;
+  const avgScore = ratingModal ? parseFloat((ratingModal.scores.reduce((a, b) => a + b, 0) / 10).toFixed(1)) : 0;
+  const avgColor = avgScore >= 9 ? "text-emerald-600" : avgScore >= 7 ? "text-teal-600" : avgScore >= 5 ? "text-amber-500" : "text-red-500";
+
   return (
     <div className="p-8">
+      {/* Success toast */}
+      {ratingSaved && (
+        <div className="fixed top-5 right-5 z-50 bg-teal-600 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 animate-fade-in">
+          <Star className="w-4 h-4 fill-white text-white" />
+          Rating saved — visible in explore immediately
+        </div>
+      )}
+
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Properties</h1>
       <p className="text-gray-500 mb-8">Manage stays and transport listings</p>
 
@@ -160,6 +218,13 @@ export default function AdminPropertiesPage() {
                           Activate
                         </button>
                       )}
+                      <button
+                        onClick={() => openRatingModal(p)}
+                        disabled={ratingLoading}
+                        className="px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors flex items-center gap-1"
+                      >
+                        <Star className="w-3 h-3" /> Rating
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -168,6 +233,74 @@ export default function AdminPropertiesPage() {
           </table>
         )}
       </div>
+
+      {/* Rating Modal */}
+      {ratingModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-gray-900">Edit Seeded Rating <span className="text-xs text-gray-400 font-normal">(10 reviewers)</span></h2>
+                <p className="text-xs text-gray-500 mt-0.5 truncate max-w-80">{ratingModal.property.title}</p>
+              </div>
+              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full">
+                <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                <span className={`text-base font-bold ${avgColor}`}>{avgScore}</span>
+                <span className="text-xs text-gray-400">/ 10</span>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-5 space-y-4">
+              {questions.map((question, i) => {
+                const s = ratingModal.scores[i];
+                const sc = s >= 9 ? "text-emerald-600" : s >= 7 ? "text-teal-600" : s >= 5 ? "text-amber-500" : "text-red-500";
+                return (
+                <div key={i}>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-gray-700 flex-1 pr-4">
+                      <span className="text-gray-400 mr-1">Q{i + 1}.</span>{question}
+                    </label>
+                    <span className={`text-base font-bold w-8 text-right ${sc}`}>{ratingModal.scores[i]}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value={ratingModal.scores[i]}
+                    onChange={(e) => {
+                      const newScores = [...ratingModal.scores];
+                      newScores[i] = parseFloat(e.target.value);
+                      setRatingModal({ ...ratingModal, scores: newScores });
+                    }}
+                    className="w-full accent-teal-600"
+                  />
+                  <div className="flex justify-between text-xs text-gray-300 mt-0.5">
+                    <span>1</span><span>5</span><span>10</span>
+                  </div>
+                </div>
+                );
+              })}
+            </div>
+
+            <div className="p-5 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setRatingModal(null)}
+                className="px-5 py-2 border border-gray-300 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveRating}
+                disabled={ratingSaving}
+                className="px-5 py-2 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              >
+                {ratingSaving ? "Saving…" : "Save Rating"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

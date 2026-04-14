@@ -69,15 +69,15 @@ export async function GET(req: NextRequest) {
   const propertyIds = properties.map((p) => p.id);
 
   // Fetch category + pricePerKm (stale Prisma client doesn't know these columns)
-  const extraRows: { id: string; category: string; pricePerKm: number | null }[] =
+  const extraRows: { id: string; category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }[] =
     propertyIds.length > 0
       ? await prisma.$queryRawUnsafe(
-          `SELECT id, category, pricePerKm FROM "Property" WHERE id IN (${propertyIds.map(() => "?").join(",")})`,
+          `SELECT id, category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard FROM "Property" WHERE id IN (${propertyIds.map(() => "?").join(",")})`,
           ...propertyIds
         )
       : [];
-  const extraMap: Record<string, { category: string; pricePerKm: number | null }> = {};
-  for (const r of extraRows) extraMap[r.id] = { category: r.category, pricePerKm: r.pricePerKm };
+  const extraMap: Record<string, { category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }> = {};
+  for (const r of extraRows) extraMap[r.id] = { category: r.category, pricePerKm: r.pricePerKm, mealPlan: r.mealPlan ?? "ROOM_ONLY", priceBnB: r.priceBnB ?? null, priceHalfBoard: r.priceHalfBoard ?? null, priceFullBoard: r.priceFullBoard ?? null };
 
   // Fetch PropertyRating averages for all returned properties
   const pratingRows: { propertyId: string; avgScore: number }[] =
@@ -143,6 +143,10 @@ export async function POST(req: NextRequest) {
     const amenities = d.amenities as string[] | undefined;
     const category = d.category as string | undefined;
     const pricePerKm = d.pricePerKm as number | undefined;
+    const mealPlan = d.mealPlan as string | undefined;
+    const priceBnB = typeof d.priceBnB === "number" ? d.priceBnB : undefined;
+    const priceHalfBoard = typeof d.priceHalfBoard === "number" ? d.priceHalfBoard : undefined;
+    const priceFullBoard = typeof d.priceFullBoard === "number" ? d.priceFullBoard : undefined;
 
     const property = await prisma.property.create({
       data: {
@@ -170,7 +174,11 @@ export async function POST(req: NextRequest) {
 
     // Write the columns the Prisma client doesn't know about via raw SQL
     const finalCategory = category ?? "STAY";
-    await prisma.$executeRaw`UPDATE "Property" SET "category" = ${finalCategory} WHERE "id" = ${property.id}`;
+    const finalMealPlan = mealPlan ?? "ROOM_ONLY";
+    await prisma.$queryRawUnsafe(
+      `UPDATE "Property" SET "category" = ?, "mealPlan" = ?, "priceBnB" = ?, "priceHalfBoard" = ?, "priceFullBoard" = ? WHERE "id" = ?`,
+      finalCategory, finalMealPlan, priceBnB ?? null, priceHalfBoard ?? null, priceFullBoard ?? null, property.id
+    );
 
     if (isTransport && typeof pricePerKm === "number") {
       await prisma.$executeRaw`UPDATE "Property" SET "pricePerKm" = ${pricePerKm} WHERE "id" = ${property.id}`;
