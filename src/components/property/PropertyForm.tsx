@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { PROPERTY_TYPES, AMENITIES, SRI_LANKA_DISTRICTS } from "@/lib/constants";
+import { useLKRRate } from "@/hooks/useLKRRate";
 import { Upload, X, Plus } from "lucide-react";
 
 const DISTRICT_COORDS: Record<string, [number, number]> = {
@@ -30,6 +31,7 @@ const DISTRICT_COORDS: Record<string, [number, number]> = {
 
 export default function PropertyForm() {
   const router = useRouter();
+  const lkrRate = useLKRRate();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -238,6 +240,9 @@ export default function PropertyForm() {
                   className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                 />
               </div>
+              {lkrRate && form.pricePerNight > 0 && (
+                <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(form.pricePerNight * lkrRate).toLocaleString()} / night</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Acceptable (USD)</label>
@@ -251,6 +256,9 @@ export default function PropertyForm() {
                   className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                 />
               </div>
+              {lkrRate && form.minPrice > 0 && (
+                <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(form.minPrice * lkrRate).toLocaleString()} / night</p>
+              )}
             </div>
           </div>
 

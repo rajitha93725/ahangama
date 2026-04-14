@@ -12,6 +12,7 @@ interface SearchParams {
   propertyType?: string;
   category?: string;
   page?: string;
+  sortBy?: string;
 }
 
 async function fetchProperties(params: SearchParams) {

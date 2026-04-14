@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
   const propertyType = searchParams.get("propertyType");
   const amenities = searchParams.get("amenities");
   const category = searchParams.get("category");
+  const sortBy = searchParams.get("sortBy") || "newest"; // newest | price_asc | price_desc | rating_desc
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "12");
 
@@ -43,6 +44,12 @@ export async function GET(req: NextRequest) {
     where.id = { in: categoryIds };
   }
 
+  // Determine sort order
+  const orderBy: Record<string, string> =
+    sortBy === "price_asc" ? { pricePerNight: "asc" } :
+    sortBy === "price_desc" ? { pricePerNight: "desc" } :
+    { createdAt: "desc" }; // newest (default) and rating_desc both start with newest; rating sort applied post-query
+
   const [total, properties] = await Promise.all([
     prisma.property.count({ where }),
     prisma.property.findMany({
@@ -53,20 +60,61 @@ export async function GET(req: NextRequest) {
         reviews: { select: { rating: true } },
         amenities: { select: { name: true, icon: true } },
       },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * limit,
-      take: limit,
+      orderBy,
+      skip: sortBy === "rating_desc" ? 0 : (page - 1) * limit, // fetch all for rating sort, slice after
+      take: sortBy === "rating_desc" ? undefined : limit,
     }),
   ]);
 
-  const data = properties.map((p) => ({
-    ...p,
-    avgRating:
-      p.reviews.length > 0
-        ? p.reviews.reduce((sum, r) => sum + r.rating, 0) / p.reviews.length
-        : null,
-    reviewCount: p.reviews.length,
-  }));
+  const propertyIds = properties.map((p) => p.id);
+
+  // Fetch category + pricePerKm (stale Prisma client doesn't know these columns)
+  const extraRows: { id: string; category: string; pricePerKm: number | null }[] =
+    propertyIds.length > 0
+      ? await prisma.$queryRawUnsafe(
+          `SELECT id, category, pricePerKm FROM "Property" WHERE id IN (${propertyIds.map(() => "?").join(",")})`,
+          ...propertyIds
+        )
+      : [];
+  const extraMap: Record<string, { category: string; pricePerKm: number | null }> = {};
+  for (const r of extraRows) extraMap[r.id] = { category: r.category, pricePerKm: r.pricePerKm };
+
+  // Fetch PropertyRating averages for all returned properties
+  const pratingRows: { propertyId: string; avgScore: number }[] =
+    propertyIds.length > 0
+      ? await prisma.$queryRawUnsafe(
+          `SELECT propertyId, avgScore FROM "PropertyRating" WHERE propertyId IN (${propertyIds.map(() => "?").join(",")})`,
+          ...propertyIds
+        )
+      : [];
+  const pratingMap: Record<string, number[]> = {};
+  for (const row of pratingRows) {
+    if (!pratingMap[row.propertyId]) pratingMap[row.propertyId] = [];
+    pratingMap[row.propertyId].push(row.avgScore);
+  }
+
+  let data = properties.map((p) => {
+    const scores = pratingMap[p.id];
+    const propertyRating = scores?.length
+      ? parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1))
+      : null;
+    return {
+      ...p,
+      ...extraMap[p.id],
+      avgRating:
+        p.reviews.length > 0
+          ? p.reviews.reduce((sum, r) => sum + r.rating, 0) / p.reviews.length
+          : null,
+      reviewCount: p.reviews.length,
+      propertyRating,
+    };
+  });
+
+  // Apply rating sort + pagination post-query (rating lives outside Prisma)
+  if (sortBy === "rating_desc") {
+    data.sort((a, b) => (b.propertyRating ?? 0) - (a.propertyRating ?? 0));
+    data = data.slice((page - 1) * limit, page * limit);
+  }
 
   return NextResponse.json({ data, total, page, totalPages: Math.ceil(total / limit) });
 }

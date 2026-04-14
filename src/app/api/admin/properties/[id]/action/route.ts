@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { randomUUID } from "crypto";
 
 export async function POST(
   req: NextRequest,
@@ -31,6 +32,22 @@ export async function POST(
     data: { status: statusMap[action] },
     select: { id: true, title: true, status: true, hostId: true },
   });
+
+  // On first approval, seed a default 10.0 rating so the listing looks great from day one
+  if (action === "approve") {
+    const existing = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1 LIMIT 1`,
+      id
+    );
+    if (existing.length === 0) {
+      const now = new Date().toISOString();
+      await prisma.$queryRawUnsafe(
+        `INSERT INTO "PropertyRating" (id, propertyId, bookingId, guestId, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, avgScore, isSeeded, createdAt)
+         VALUES (?, ?, NULL, NULL, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 1, ?)`,
+        randomUUID(), id, now
+      );
+    }
+  }
 
   return NextResponse.json(property);
 }

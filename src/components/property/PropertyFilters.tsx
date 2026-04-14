@@ -4,6 +4,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PROPERTY_TYPES } from "@/lib/constants";
 import { Search, RotateCcw } from "lucide-react";
+import { useLKRRate } from "@/hooks/useLKRRate";
+
+const SORT_OPTIONS = [
+  { value: "newest", label: "Newest first" },
+  { value: "price_asc", label: "Price: low to high" },
+  { value: "price_desc", label: "Price: high to low" },
+  { value: "rating_desc", label: "Top rated" },
+];
 
 interface Props {
   districts: string[];
@@ -13,16 +21,19 @@ interface Props {
     maxPrice?: string;
     guests?: string;
     propertyType?: string;
+    sortBy?: string;
   };
 }
 
 export default function PropertyFilters({ districts, currentFilters }: Props) {
   const router = useRouter();
+  const lkrRate = useLKRRate();
   const [district, setDistrict] = useState(currentFilters.district || "");
   const [minPrice, setMinPrice] = useState(currentFilters.minPrice || "");
   const [maxPrice, setMaxPrice] = useState(currentFilters.maxPrice || "");
   const [guests, setGuests] = useState(currentFilters.guests || "");
   const [propertyType, setPropertyType] = useState(currentFilters.propertyType || "");
+  const [sortBy, setSortBy] = useState(currentFilters.sortBy || "newest");
 
   const applyFilters = () => {
     const params = new URLSearchParams();
@@ -31,6 +42,7 @@ export default function PropertyFilters({ districts, currentFilters }: Props) {
     if (maxPrice) params.set("maxPrice", maxPrice);
     if (guests) params.set("guests", guests);
     if (propertyType) params.set("propertyType", propertyType);
+    if (sortBy && sortBy !== "newest") params.set("sortBy", sortBy);
     router.push(`/properties?${params}`);
   };
 
@@ -40,10 +52,11 @@ export default function PropertyFilters({ districts, currentFilters }: Props) {
     setMaxPrice("");
     setGuests("");
     setPropertyType("");
+    setSortBy("newest");
     router.push("/properties");
   };
 
-  const hasFilters = district || minPrice || maxPrice || guests || propertyType;
+  const hasFilters = district || minPrice || maxPrice || guests || propertyType || (sortBy && sortBy !== "newest");
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-5">
@@ -54,6 +67,18 @@ export default function PropertyFilters({ districts, currentFilters }: Props) {
             <RotateCcw className="w-3 h-3" /> Reset
           </button>
         )}
+      </div>
+
+      {/* Sort by */}
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">Sort by</label>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+        >
+          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       </div>
 
       {/* Location */}
@@ -73,22 +98,32 @@ export default function PropertyFilters({ districts, currentFilters }: Props) {
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1.5">Price per night (USD)</label>
         <div className="grid grid-cols-2 gap-2">
-          <input
-            type="number"
-            value={minPrice}
-            onChange={(e) => setMinPrice(e.target.value)}
-            placeholder="Min"
-            min="0"
-            className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-          />
-          <input
-            type="number"
-            value={maxPrice}
-            onChange={(e) => setMaxPrice(e.target.value)}
-            placeholder="Max"
-            min="0"
-            className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-          />
+          <div>
+            <input
+              type="number"
+              value={minPrice}
+              onChange={(e) => setMinPrice(e.target.value)}
+              placeholder="Min"
+              min="0"
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+            />
+            {lkrRate && minPrice && parseFloat(minPrice) > 0 && (
+              <p className="text-xs text-gray-400 mt-0.5">≈ LKR {Math.round(parseFloat(minPrice) * lkrRate).toLocaleString()}</p>
+            )}
+          </div>
+          <div>
+            <input
+              type="number"
+              value={maxPrice}
+              onChange={(e) => setMaxPrice(e.target.value)}
+              placeholder="Max"
+              min="0"
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+            />
+            {lkrRate && maxPrice && parseFloat(maxPrice) > 0 && (
+              <p className="text-xs text-gray-400 mt-0.5">≈ LKR {Math.round(parseFloat(maxPrice) * lkrRate).toLocaleString()}</p>
+            )}
+          </div>
         </div>
       </div>
 

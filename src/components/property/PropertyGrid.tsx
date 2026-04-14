@@ -7,11 +7,14 @@ interface Property {
   title: string;
   district: string;
   propertyType: string;
+  category?: string;
   pricePerNight: number;
+  pricePerKm?: number | null;
   maxGuests: number;
   bedrooms: number;
   avgRating: number | null;
   reviewCount: number;
+  propertyRating?: number | null;
   images: { url: string; alt?: string | null }[];
   host: { name?: string | null; image?: string | null };
 }

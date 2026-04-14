@@ -3,9 +3,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import BookingDetailClient from "./BookingDetailClient";
 import BookingStatusBadge from "@/components/booking/BookingStatusBadge";
+import RatingForm from "@/components/booking/RatingForm";
+import StarRating from "@/components/shared/StarRating";
 import { formatDateRange, formatCurrency, getInitials } from "@/lib/utils";
+import { ratingToStars } from "@/lib/ratingQuestions";
 import Link from "next/link";
-import { MapPin, Calendar, Users, ArrowLeft, Navigation, Car } from "lucide-react";
+import { MapPin, Calendar, Users, ArrowLeft, Navigation, Car, Star } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -51,6 +54,25 @@ export default async function BookingDetailPage({ params }: Props) {
   const isGuest = booking.guestId === session.user.id;
   const isHost = booking.property.hostId === session.user.id;
   if (!isGuest && !isHost && session.user.role !== "ADMIN") redirect("/bookings");
+
+  // Fetch the property's current PropertyRating (avg across all rated rows)
+  const ratingRows = await prisma.$queryRawUnsafe<{ avgScore: number }[]>(
+    `SELECT avgScore FROM "PropertyRating" WHERE propertyId = ?`,
+    booking.propertyId
+  );
+  const propertyAvgScore =
+    ratingRows.length > 0
+      ? ratingRows.reduce((s, r) => s + r.avgScore, 0) / ratingRows.length
+      : null;
+
+  // Check if this guest has already rated this booking
+  const hasRated =
+    isGuest && booking.status === "COMPLETED"
+      ? (await prisma.$queryRawUnsafe<{ id: string }[]>(
+          `SELECT id FROM "PropertyRating" WHERE bookingId = ? LIMIT 1`,
+          booking.id
+        )).length > 0
+      : false;
 
   const property = booking.property;
 
@@ -191,8 +213,25 @@ export default async function BookingDetailPage({ params }: Props) {
           </div>
         </div>
 
-        {/* Right: Negotiation */}
-        <div className="lg:col-span-2">
+        {/* Right: Negotiation + Rating */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Property rating badge */}
+          {propertyAvgScore !== null && (
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <StarRating value={ratingToStars(propertyAvgScore)} readonly size="sm" />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                <span className="text-sm font-bold text-gray-900">{propertyAvgScore.toFixed(1)}</span>
+                <span className="text-xs text-gray-400">/ 10</span>
+              </div>
+              <span className="text-xs text-gray-400 ml-auto">
+                {ratingRows.length} rating{ratingRows.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+
           <div className="bg-white rounded-2xl border border-gray-200 p-5">
             <BookingDetailClient
               bookingId={booking.id}
@@ -208,6 +247,20 @@ export default async function BookingDetailPage({ params }: Props) {
               currentUserId={session.user.id}
             />
           </div>
+
+          {/* Rating form: shown to guest after booking is COMPLETED and not yet rated */}
+          {isGuest && booking.status === "COMPLETED" && !hasRated && (
+            <RatingForm
+              propertyId={booking.propertyId}
+              bookingId={booking.id}
+              isTransport={isTransportBooking}
+            />
+          )}
+          {isGuest && booking.status === "COMPLETED" && hasRated && (
+            <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 text-center">
+              <p className="text-sm text-teal-700 font-medium">You have already rated this booking.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

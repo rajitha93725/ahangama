@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, calcNights } from "@/lib/utils";
+import { useLKRRate } from "@/hooks/useLKRRate";
 import { Calendar, Users, MapPin, Navigation, Car } from "lucide-react";
 
 interface Props {
@@ -48,6 +49,7 @@ export default function BookingWidget({
   const [transportOffer, setTransportOffer] = useState("");
 
   const nights = checkIn && checkOut ? calcNights(checkIn, checkOut) : 0;
+  const lkrRate = useLKRRate();
 
   // Fetch available room count whenever dates change (STAY only)
   const fetchAvailableRooms = async (ci: string, co: string) => {
@@ -144,15 +146,21 @@ export default function BookingWidget({
         {/* Pricing header */}
         <div className="mb-4 space-y-1">
           {pricePerKm > 0 && (
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-bold text-gray-900">{formatCurrency(pricePerKm)}</span>
-              <span className="text-gray-500 text-sm">/ km</span>
+            <div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl font-bold text-gray-900">{formatCurrency(pricePerKm)}</span>
+                <span className="text-gray-500 text-sm">/ km</span>
+              </div>
+              {lkrRate && <p className="text-xs text-gray-400">≈ LKR {Math.round(pricePerKm * lkrRate).toLocaleString()} / km</p>}
             </div>
           )}
           {pricePerNight > 0 && (
-            <div className="flex items-baseline gap-1">
-              <span className="text-lg font-semibold text-gray-700">{formatCurrency(pricePerNight)}</span>
-              <span className="text-gray-500 text-sm">/ night parking</span>
+            <div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-semibold text-gray-700">{formatCurrency(pricePerNight)}</span>
+                <span className="text-gray-500 text-sm">/ night parking</span>
+              </div>
+              {lkrRate && <p className="text-xs text-gray-400">≈ LKR {Math.round(pricePerNight * lkrRate).toLocaleString()} / night</p>}
             </div>
           )}
         </div>
@@ -309,9 +317,12 @@ export default function BookingWidget({
                 className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
               />
             </div>
-            <p className="text-xs text-gray-400 mt-1">
-              Leave blank to use the suggested total above
-            </p>
+            {lkrRate && (parseFloat(transportOffer) > 0 || suggestedTotal > 0) && (
+              <p className="text-xs text-gray-400 mt-1">
+                ≈ LKR {Math.round((parseFloat(transportOffer) || suggestedTotal) * lkrRate).toLocaleString()} total
+              </p>
+            )}
+            <p className="text-xs text-gray-400 mt-0.5">Leave blank to use the suggested total above</p>
           </div>
 
           {/* Message */}
@@ -347,10 +358,11 @@ export default function BookingWidget({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 sticky top-24">
-      <div className="flex items-baseline gap-1 mb-1">
+      <div className="flex items-baseline gap-1 mb-0.5">
         <span className="text-2xl font-bold text-gray-900">{formatCurrency(pricePerNight)}</span>
         <span className="text-gray-500 text-sm">/ night</span>
       </div>
+      {lkrRate && <p className="text-xs text-gray-400 mb-1">≈ LKR {Math.round(pricePerNight * lkrRate).toLocaleString()} / night</p>}
       <p className="text-xs text-teal-600 mb-4">Price is negotiable — make your offer below</p>
 
       <form onSubmit={handleSubmit} className="space-y-3">
@@ -457,6 +469,12 @@ export default function BookingWidget({
               className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
             />
           </div>
+          {lkrRate && parseFloat(offerAmount) > 0 && (
+            <p className="text-xs text-gray-400 mt-1">
+              ≈ LKR {Math.round(parseFloat(offerAmount) * lkrRate).toLocaleString()} / night
+              {nights > 0 && <> · LKR {Math.round(parseFloat(offerAmount) * nights * lkrRate).toLocaleString()} total</>}
+            </p>
+          )}
         </div>
 
         <div>
@@ -480,7 +498,12 @@ export default function BookingWidget({
             </div>
             <div className="flex justify-between font-semibold text-gray-900 border-t border-gray-200 pt-1 mt-1">
               <span>Total offer</span>
-              <span>{formatCurrency(stayTotal)}</span>
+              <div className="text-right">
+                <span>{formatCurrency(stayTotal)}</span>
+                {lkrRate && stayTotal > 0 && (
+                  <p className="text-xs font-normal text-gray-400">≈ LKR {Math.round(stayTotal * lkrRate).toLocaleString()}</p>
+                )}
+              </div>
             </div>
           </div>
         )}

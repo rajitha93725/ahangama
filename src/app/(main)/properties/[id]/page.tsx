@@ -3,7 +3,8 @@ import PropertyGallery from "@/components/property/PropertyGallery";
 import BookingWidget from "@/components/booking/BookingWidget";
 import StarRating from "@/components/shared/StarRating";
 import { formatDate, getInitials, formatCurrency } from "@/lib/utils";
-import { MapPin, Users, BedDouble, Bath, Wifi, Car, Navigation } from "lucide-react";
+import { ratingToStars } from "@/lib/ratingQuestions";
+import { MapPin, Users, BedDouble, Bath, Wifi, Car, Navigation, Star } from "lucide-react";
 
 async function fetchProperty(id: string) {
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
@@ -26,11 +27,23 @@ export default async function PropertyDetailPage({ params }: Props) {
       {/* Title */}
       <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{property.title}</h1>
       <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-6">
-        {property.avgRating !== null && (
-          <div className="flex items-center gap-1">
-            <StarRating value={Math.round(property.avgRating)} readonly size="sm" />
-            <span className="font-medium">{property.avgRating.toFixed(1)}</span>
-            <span className="text-gray-400">({property.reviewCount} reviews)</span>
+        {(property.propertyRating != null || property.avgRating !== null) && (
+          <div className="flex items-center gap-1.5">
+            {property.propertyRating != null ? (
+              <>
+                <StarRating value={ratingToStars(property.propertyRating)} readonly size="sm" />
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                <span className="font-semibold">{property.propertyRating.toFixed(1)}</span>
+                <span className="text-gray-400">/ 10</span>
+                <span className="text-gray-400">({property.propertyRatingCount ?? property.reviewCount} ratings)</span>
+              </>
+            ) : (
+              <>
+                <StarRating value={Math.round(property.avgRating)} readonly size="sm" />
+                <span className="font-medium">{property.avgRating.toFixed(1)}</span>
+                <span className="text-gray-400">({property.reviewCount} reviews)</span>
+              </>
+            )}
           </div>
         )}
         <div className="flex items-center gap-1">

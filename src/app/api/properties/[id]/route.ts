@@ -32,7 +32,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       ? property.reviews.reduce((sum, r) => sum + r.rating, 0) / property.reviews.length
       : null;
 
-  return NextResponse.json({ ...property, category, pricePerKm, avgRating, reviewCount: property.reviews.length });
+  // PropertyRating: average of all avgScore values (includes seeded 10.0)
+  const prRows = await prisma.$queryRawUnsafe<{ avgScore: number }[]>(
+    `SELECT avgScore FROM "PropertyRating" WHERE propertyId = ?`,
+    id
+  );
+  const propertyRating =
+    prRows.length > 0
+      ? parseFloat((prRows.reduce((s, r) => s + r.avgScore, 0) / prRows.length).toFixed(1))
+      : null;
+  const propertyRatingCount = prRows.filter((r) => !("isSeeded" in r)).length || prRows.length;
+
+  return NextResponse.json({
+    ...property, category, pricePerKm, avgRating, reviewCount: property.reviews.length,
+    propertyRating, propertyRatingCount,
+  });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

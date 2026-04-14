@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TRANSPORT_TYPES, SRI_LANKA_DISTRICTS } from "@/lib/constants";
 import { Upload, X } from "lucide-react";
+import { useLKRRate } from "@/hooks/useLKRRate";
 
 const DISTRICT_COORDS: Record<string, [number, number]> = {
   Colombo: [6.9271, 79.8612],
@@ -45,6 +46,7 @@ const TRANSPORT_FEATURES = [
 
 export default function TransportForm() {
   const router = useRouter();
+  const lkrRate = useLKRRate();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -252,6 +254,9 @@ export default function TransportForm() {
                 />
               </div>
               <p className="text-xs text-gray-400 mt-1">Charged per km driven</p>
+              {lkrRate && form.pricePerKm > 0 && (
+                <p className="text-xs text-gray-400">≈ LKR {Math.round(form.pricePerKm * lkrRate).toLocaleString()} / km</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -270,6 +275,9 @@ export default function TransportForm() {
                 />
               </div>
               <p className="text-xs text-gray-400 mt-1">Overnight parking / per-day holding fee</p>
+              {lkrRate && form.pricePerNight > 0 && (
+                <p className="text-xs text-gray-400">≈ LKR {Math.round(form.pricePerNight * lkrRate).toLocaleString()} / night</p>
+              )}
             </div>
           </div>
           <div>
@@ -287,6 +295,9 @@ export default function TransportForm() {
               />
             </div>
             <p className="text-xs text-gray-400 mt-1">Lowest total offer you'll accept from a guest</p>
+            {lkrRate && form.minPrice > 0 && (
+              <p className="text-xs text-gray-400">≈ LKR {Math.round(form.minPrice * lkrRate).toLocaleString()} minimum</p>
+            )}
           </div>
 
           <div>
