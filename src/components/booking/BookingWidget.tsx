@@ -378,14 +378,17 @@ export default function BookingWidget({
 
   // ─── Stay widget (original) ────────────────────────────────────────────────
   const total = nights > 0 ? parseFloat(offerAmount) * nights : 0;
+  const selectedPlanPrice = mealPlanPrices[mealPlan] ?? pricePerNight;
+  const selectedPlanLabel = MEAL_PLANS.find((m) => m.value === mealPlan)?.label ?? "Room Only";
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 sticky top-24">
       <div className="flex items-baseline gap-1 mb-0.5">
-        <span className="text-2xl font-bold text-gray-900">{formatCurrency(pricePerNight)}</span>
+        <span className="text-2xl font-bold text-gray-900">{formatCurrency(selectedPlanPrice)}</span>
         <span className="text-gray-500 text-sm">/ night</span>
       </div>
-      {lkrRate && <p className="text-xs text-gray-400 mb-1">≈ LKR {Math.round(pricePerNight * lkrRate).toLocaleString()} / night</p>}
+      {lkrRate && <p className="text-xs text-gray-400 mb-0.5">≈ LKR {Math.round(selectedPlanPrice * lkrRate).toLocaleString()} / night</p>}
+      <p className="text-xs text-gray-500 mb-1">{selectedPlanLabel}</p>
       <p className="text-xs text-teal-600 mb-4">Price is negotiable — make your offer below</p>
 
       <form onSubmit={handleSubmit} className="space-y-3">
@@ -476,31 +479,7 @@ export default function BookingWidget({
           </div>
         </div>
 
-        <div>
-          <label className="text-xs font-medium text-gray-700 block mb-1">
-            Your offer per night <span className="text-gray-400">(min {formatCurrency(minPrice)})</span>
-          </label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
-            <input
-              type="number"
-              value={offerAmount}
-              onChange={(e) => setOfferAmount(e.target.value)}
-              min={minPrice}
-              step="1"
-              required
-              className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-            />
-          </div>
-          {lkrRate && parseFloat(offerAmount) > 0 && (
-            <p className="text-xs text-gray-400 mt-1">
-              ≈ LKR {Math.round(parseFloat(offerAmount) * lkrRate).toLocaleString()} / night
-              {nights > 0 && <> · LKR {Math.round(parseFloat(offerAmount) * nights * lkrRate).toLocaleString()} total</>}
-            </p>
-          )}
-        </div>
-
-        {/* Meal Plan */}
+        {/* Meal Plan — shown before offer so selecting a plan updates the price */}
         <div>
           <label className="text-xs font-medium text-gray-700 block mb-1.5">Meal Plan</label>
           <div className="grid grid-cols-1 gap-1.5">
@@ -527,6 +506,30 @@ export default function BookingWidget({
               );
             })}
           </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-gray-700 block mb-1">
+            Your offer per night <span className="text-gray-400">(min {formatCurrency(minPrice)})</span>
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
+            <input
+              type="number"
+              value={offerAmount}
+              onChange={(e) => setOfferAmount(e.target.value)}
+              min={minPrice}
+              step="1"
+              required
+              className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+            />
+          </div>
+          {lkrRate && parseFloat(offerAmount) > 0 && (
+            <p className="text-xs text-gray-400 mt-1">
+              ≈ LKR {Math.round(parseFloat(offerAmount) * lkrRate).toLocaleString()} / night
+              {nights > 0 && <> · LKR {Math.round(parseFloat(offerAmount) * nights * lkrRate).toLocaleString()} total</>}
+            </p>
+          )}
         </div>
 
         <div>

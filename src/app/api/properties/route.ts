@@ -144,9 +144,9 @@ export async function POST(req: NextRequest) {
     const category = d.category as string | undefined;
     const pricePerKm = d.pricePerKm as number | undefined;
     const mealPlan = d.mealPlan as string | undefined;
-    const priceBnB = typeof d.priceBnB === "number" ? d.priceBnB : undefined;
-    const priceHalfBoard = typeof d.priceHalfBoard === "number" ? d.priceHalfBoard : undefined;
-    const priceFullBoard = typeof d.priceFullBoard === "number" ? d.priceFullBoard : undefined;
+    const priceBnB = (d.priceBnB != null && d.priceBnB !== "") ? Number(d.priceBnB) : null;
+    const priceHalfBoard = (d.priceHalfBoard != null && d.priceHalfBoard !== "") ? Number(d.priceHalfBoard) : null;
+    const priceFullBoard = (d.priceFullBoard != null && d.priceFullBoard !== "") ? Number(d.priceFullBoard) : null;
 
     const property = await prisma.property.create({
       data: {
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
     const finalMealPlan = mealPlan ?? "ROOM_ONLY";
     await prisma.$queryRawUnsafe(
       `UPDATE "Property" SET "category" = ?, "mealPlan" = ?, "priceBnB" = ?, "priceHalfBoard" = ?, "priceFullBoard" = ? WHERE "id" = ?`,
-      finalCategory, finalMealPlan, priceBnB ?? null, priceHalfBoard ?? null, priceFullBoard ?? null, property.id
+      finalCategory, finalMealPlan, priceBnB, priceHalfBoard, priceFullBoard, property.id
     );
 
     if (isTransport && typeof pricePerKm === "number") {
