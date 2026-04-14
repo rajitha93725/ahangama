@@ -96,9 +96,11 @@ export default function EditPropertyPage() {
     setError("");
     setSuccess(false);
     try {
+      const basePrice = toNum(pricePerNight);
+      const autoMinPrice = basePrice !== null ? Math.round(basePrice * 0.8) : null;
       const body: Record<string, unknown> = {
-        pricePerNight: toNum(pricePerNight),
-        minPrice: toNum(minPrice),
+        pricePerNight: basePrice,
+        minPrice: autoMinPrice,
         priceBnB: toNum(priceBnB),
         priceHalfBoard: toNum(priceHalfBoard),
         priceFullBoard: toNum(priceFullBoard),
@@ -147,16 +149,18 @@ export default function EditPropertyPage() {
             {isTransport ? "Transport Pricing" : "Room Only Rate"}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <PriceField
-              label={isTransport ? "Parking / Night" : "Room Only / Night"}
-              value={pricePerNight} onChange={setPricePerNight}
-              min={0} required lkrRate={lkrRate}
-            />
-            <PriceField
-              label="Minimum Acceptable"
-              value={minPrice} onChange={setMinPrice}
-              min={1} required lkrRate={lkrRate}
-            />
+            <div>
+              <PriceField
+                label={isTransport ? "Parking / Night" : "Room Only / Night"}
+                value={pricePerNight} onChange={setPricePerNight}
+                min={0} required lkrRate={lkrRate}
+              />
+              {!isTransport && typeof pricePerNight === "number" && pricePerNight > 0 && (
+                <p className="text-xs text-teal-600 mt-1">
+                  Minimum guests can offer: ${Math.round(pricePerNight * 0.8)}/night (80%)
+                </p>
+              )}
+            </div>
             {isTransport && (
               <PriceField
                 label="Per Kilometer"

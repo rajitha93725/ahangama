@@ -48,7 +48,7 @@ export default function PropertyForm() {
     latitude: DISTRICT_COORDS["Galle"][0],
     longitude: DISTRICT_COORDS["Galle"][1],
     pricePerNight: 80,
-    minPrice: 50,
+    minPrice: 64, // auto = 80% of pricePerNight; kept in sync on submit
     priceBnB: "" as string | number,
     priceHalfBoard: "" as string | number,
     priceFullBoard: "" as string | number,
@@ -102,10 +102,11 @@ export default function PropertyForm() {
     setSubmitting(true);
     setError("");
     try {
+      const autoMinPrice = Math.round(form.pricePerNight * 0.8);
       const res = await fetch("/api/properties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, minPrice: autoMinPrice }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -233,39 +234,27 @@ export default function PropertyForm() {
           {/* Mandatory: Room Only rate */}
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Room Rates (USD / night)</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Room Only <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                  <input
-                    type="number" min="1"
-                    value={form.pricePerNight}
-                    onChange={(e) => update("pricePerNight", parseFloat(e.target.value))}
-                    className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                  />
-                </div>
-                {lkrRate && form.pricePerNight > 0 && (
-                  <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(form.pricePerNight * lkrRate).toLocaleString()}/night</p>
-                )}
+            <div className="max-w-xs">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Room Only <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                <input
+                  type="number" min="1"
+                  value={form.pricePerNight}
+                  onChange={(e) => update("pricePerNight", parseFloat(e.target.value))}
+                  className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Acceptable <span className="text-red-500">*</span></label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                  <input
-                    type="number" min="1"
-                    value={form.minPrice}
-                    onChange={(e) => update("minPrice", parseFloat(e.target.value))}
-                    className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                  />
-                </div>
-                {lkrRate && form.minPrice > 0 && (
-                  <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(form.minPrice * lkrRate).toLocaleString()}/night</p>
-                )}
-              </div>
+              {lkrRate && form.pricePerNight > 0 && (
+                <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(form.pricePerNight * lkrRate).toLocaleString()}/night</p>
+              )}
+              {form.pricePerNight > 0 && (
+                <p className="text-xs text-teal-600 mt-1">
+                  Minimum guests can offer: ${Math.round(form.pricePerNight * 0.8)}/night (80%)
+                </p>
+              )}
             </div>
           </div>
 

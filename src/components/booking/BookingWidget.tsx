@@ -61,7 +61,9 @@ export default function BookingWidget({
   const selectMealPlan = (value: string) => {
     setMealPlan(value);
     const price = mealPlanPrices[value];
-    if (price !== null && price !== undefined) setOfferAmount(String(price));
+    if (price !== null && price !== undefined) {
+      setOfferAmount(String(price));
+    }
   };
 
   // Transport-only
@@ -114,8 +116,8 @@ export default function BookingWidget({
       if (nights <= 0) { setError("Please select valid dates"); return; }
       if (availableRooms === 0) { setError("No rooms available for these dates"); return; }
       if (availableRooms === null) { setError("Please select dates to check availability"); return; }
-      if (parseFloat(offerAmount) < minPrice) {
-        setError(`Minimum offer is ${formatCurrency(minPrice)}/night`);
+      if (parseFloat(offerAmount) < effectiveMinPrice) {
+        setError(`Minimum offer is ${formatCurrency(effectiveMinPrice)}/night`);
         return;
       }
     }
@@ -124,8 +126,8 @@ export default function BookingWidget({
       ? parseFloat(transportOffer) || suggestedTotal
       : parseFloat(offerAmount) * nights;
 
-    if (finalOffer < minPrice) {
-      setError(`Minimum offer is ${formatCurrency(minPrice)}`);
+    if (!isTransport && finalOffer < effectiveMinPrice * nights) {
+      setError(`Minimum offer is ${formatCurrency(effectiveMinPrice)}/night`);
       return;
     }
 
@@ -380,6 +382,7 @@ export default function BookingWidget({
   const total = nights > 0 ? parseFloat(offerAmount) * nights : 0;
   const selectedPlanPrice = mealPlanPrices[mealPlan] ?? pricePerNight;
   const selectedPlanLabel = MEAL_PLANS.find((m) => m.value === mealPlan)?.label ?? "Room Only";
+  const effectiveMinPrice = Math.round(selectedPlanPrice * 0.8);
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-lg p-6 sticky top-24">
@@ -510,7 +513,7 @@ export default function BookingWidget({
 
         <div>
           <label className="text-xs font-medium text-gray-700 block mb-1">
-            Your offer per night <span className="text-gray-400">(min {formatCurrency(minPrice)})</span>
+            Your offer per night <span className="text-gray-400">(min {formatCurrency(effectiveMinPrice)})</span>
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
@@ -518,7 +521,7 @@ export default function BookingWidget({
               type="number"
               value={offerAmount}
               onChange={(e) => setOfferAmount(e.target.value)}
-              min={minPrice}
+              min={effectiveMinPrice}
               step="1"
               required
               className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
