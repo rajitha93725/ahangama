@@ -38,6 +38,7 @@ export async function GET(
 
   // For each room, check if it has any conflicting booking
   let availableCount = 0;
+  const roomNames: string[] = [];
   for (const room of rooms) {
     const extConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `SELECT id FROM "ExternalBooking"
@@ -57,7 +58,8 @@ export async function GET(
     if (intConflict.length > 0) continue;
 
     availableCount++;
+    roomNames.push(room.name);
   }
 
-  return NextResponse.json({ availableCount, totalRooms: rooms.length });
+  return NextResponse.json({ availableCount, totalRooms: rooms.length, roomNames });
 }

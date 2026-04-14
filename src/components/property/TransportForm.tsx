@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TRANSPORT_TYPES, SRI_LANKA_DISTRICTS } from "@/lib/constants";
-import { Upload, X } from "lucide-react";
+import { Plus, Trash2, Upload, X } from "lucide-react";
+type VehicleGroup = { type: string; count: number; maxPassengers: number };
 import { useLKRRate } from "@/hooks/useLKRRate";
 
 const DISTRICT_COORDS: Record<string, [number, number]> = {
@@ -73,6 +74,22 @@ export default function TransportForm() {
     amenities: [] as string[],
   });
 
+  // Fleet: one or more vehicle groups. Each group = one vehicle type + how many of that type.
+  const [vehicleGroups, setVehicleGroups] = useState<VehicleGroup[]>([{ type: "CAR", count: 1, maxPassengers: 4 }]);
+
+  const addVehicleGroup = () => setVehicleGroups((prev) => [...prev, { type: "CAR", count: 1, maxPassengers: 4 }]);
+  const removeVehicleGroup = (i: number) => setVehicleGroups((prev) => prev.filter((_, j) => j !== i));
+  const updateVehicleGroup = (i: number, field: keyof VehicleGroup, value: string | number) => {
+    setVehicleGroups((prev) => {
+      const next = prev.map((g, j) => j === i ? { ...g, [field]: value } : g);
+      // Keep form.propertyType in sync with the first group's type
+      if (i === 0 && field === "type") update("propertyType", value);
+      return next;
+    });
+  };
+
+  const totalVehicles = vehicleGroups.reduce((s, g) => s + g.count, 0);
+
   const update = (field: string, value: unknown) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value };
@@ -115,10 +132,12 @@ export default function TransportForm() {
     setSubmitting(true);
     setError("");
     try {
+      const autoMinPrice = Math.round(form.pricePerKm * 10 * 0.8) || Math.round(form.pricePerNight * 0.8) || 20;
+      const computedMaxGuests = Math.max(...vehicleGroups.map((g) => g.maxPassengers), 1);
       const res = await fetch("/api/properties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, minPrice: autoMinPrice, maxGuests: computedMaxGuests, vehicleGroups }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -146,8 +165,6 @@ export default function TransportForm() {
       setSubmitting(false);
     }
   };
-
-  const selectedType = TRANSPORT_TYPES.find((t) => t.value === form.propertyType);
 
   return (
     <div className="space-y-8">
@@ -188,27 +205,65 @@ export default function TransportForm() {
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
-              <select
-                value={form.propertyType}
-                onChange={(e) => update("propertyType", e.target.value)}
-                className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
-              >
-                {TRANSPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+          {/* Fleet builder */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">Your Fleet</label>
+              <span className="text-xs text-amber-600 font-medium">{totalVehicles} vehicle{totalVehicles !== 1 ? "s" : ""} total</span>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Base District</label>
-              <select
-                value={form.district}
-                onChange={(e) => update("district", e.target.value)}
-                className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
-              >
-                {SRI_LANKA_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+            {/* Column headers */}
+            <div className="grid grid-cols-[1fr_56px_80px_32px] gap-2 px-1">
+              <span className="text-xs text-gray-400">Vehicle Type</span>
+              <span className="text-xs text-gray-400 text-center">Count</span>
+              <span className="text-xs text-gray-400 text-center">Max Seats</span>
+              <span />
             </div>
+            <div className="space-y-2">
+              {vehicleGroups.map((group, i) => (
+                <div key={i} className="grid grid-cols-[1fr_56px_80px_32px] items-center gap-2">
+                  <select
+                    value={group.type}
+                    onChange={(e) => updateVehicleGroup(i, "type", e.target.value)}
+                    className="px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                  >
+                    {TRANSPORT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                  <input
+                    type="number" min="1" max="50"
+                    value={group.count}
+                    onChange={(e) => updateVehicleGroup(i, "count", Math.max(1, parseInt(e.target.value) || 1))}
+                    className="px-2 py-2.5 border border-gray-300 rounded-xl text-sm text-center focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                  />
+                  <input
+                    type="number" min="1" max="70"
+                    value={group.maxPassengers}
+                    onChange={(e) => updateVehicleGroup(i, "maxPassengers", Math.max(1, parseInt(e.target.value) || 1))}
+                    className="px-2 py-2.5 border border-gray-300 rounded-xl text-sm text-center focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+                  />
+                  {vehicleGroups.length > 1 ? (
+                    <button type="button" onClick={() => removeVehicleGroup(i)}
+                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  ) : <span />}
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addVehicleGroup}
+              className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium">
+              <Plus className="w-3.5 h-3.5" /> Add another vehicle type
+            </button>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Base District</label>
+            <select
+              value={form.district}
+              onChange={(e) => update("district", e.target.value)}
+              className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+            >
+              {SRI_LANKA_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Pickup Address / Location</label>
@@ -216,17 +271,6 @@ export default function TransportForm() {
               value={form.address}
               onChange={(e) => update("address", e.target.value)}
               placeholder="Where can travelers find or pick up this vehicle?"
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Max Passengers</label>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={form.maxGuests}
-              onChange={(e) => update("maxGuests", parseInt(e.target.value))}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
             />
           </div>
@@ -280,25 +324,6 @@ export default function TransportForm() {
               )}
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Minimum Acceptable Offer (USD)
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-              <input
-                type="number"
-                min="1"
-                value={form.minPrice}
-                onChange={(e) => update("minPrice", parseFloat(e.target.value))}
-                className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
-              />
-            </div>
-            <p className="text-xs text-gray-400 mt-1">Lowest total offer you'll accept from a guest</p>
-            {lkrRate && form.minPrice > 0 && (
-              <p className="text-xs text-gray-400">≈ LKR {Math.round(form.minPrice * lkrRate).toLocaleString()} minimum</p>
-            )}
-          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-3">Features & Inclusions</label>
@@ -323,10 +348,13 @@ export default function TransportForm() {
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <p className="text-sm text-amber-800 font-medium">
-              {selectedType?.label} · {form.district} · up to {form.maxGuests} passengers
+              {vehicleGroups.map((g) => {
+                const t = TRANSPORT_TYPES.find((t) => t.value === g.type);
+                return `${g.count}× ${t?.label ?? g.type} (${g.maxPassengers} seats)`;
+              }).join(", ")} · {form.district}
             </p>
             <p className="text-xs text-amber-600 mt-1">
-              ${form.pricePerKm}/km · ${form.pricePerNight}/night parking · min offer ${form.minPrice}
+              ${form.pricePerKm}/km · ${form.pricePerNight}/night parking · min 80% of trip cost
             </p>
           </div>
         </div>

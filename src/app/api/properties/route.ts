@@ -147,6 +147,7 @@ export async function POST(req: NextRequest) {
     const priceBnB = (d.priceBnB != null && d.priceBnB !== "") ? Number(d.priceBnB) : null;
     const priceHalfBoard = (d.priceHalfBoard != null && d.priceHalfBoard !== "") ? Number(d.priceHalfBoard) : null;
     const priceFullBoard = (d.priceFullBoard != null && d.priceFullBoard !== "") ? Number(d.priceFullBoard) : null;
+    const vehicleGroups = d.vehicleGroups as { type: string; count: number }[] | undefined;
 
     const property = await prisma.property.create({
       data: {
@@ -175,19 +176,37 @@ export async function POST(req: NextRequest) {
     // Write the columns the Prisma client doesn't know about via raw SQL
     const finalCategory = category ?? "STAY";
     const finalMealPlan = mealPlan ?? "ROOM_ONLY";
+    const vehicleGroupsJson = vehicleGroups?.length ? JSON.stringify(vehicleGroups) : null;
     await prisma.$queryRawUnsafe(
-      `UPDATE "Property" SET "category" = ?, "mealPlan" = ?, "priceBnB" = ?, "priceHalfBoard" = ?, "priceFullBoard" = ? WHERE "id" = ?`,
-      finalCategory, finalMealPlan, priceBnB, priceHalfBoard, priceFullBoard, property.id
+      `UPDATE "Property" SET "category" = ?, "mealPlan" = ?, "priceBnB" = ?, "priceHalfBoard" = ?, "priceFullBoard" = ?, "vehicleGroups" = ? WHERE "id" = ?`,
+      finalCategory, finalMealPlan, priceBnB, priceHalfBoard, priceFullBoard, vehicleGroupsJson, property.id
     );
 
     if (isTransport && typeof pricePerKm === "number") {
       await prisma.$executeRaw`UPDATE "Property" SET "pricePerKm" = ${pricePerKm} WHERE "id" = ${property.id}`;
     }
 
-    // Auto-create rooms for STAY properties based on bedroom count
-    if (!isTransport) {
+    const now = new Date().toISOString();
+
+    if (isTransport && vehicleGroups?.length) {
+      // Create one Room entry per individual vehicle (e.g. "Van 1", "Van 2", "Car 1"…)
+      const VEHICLE_SHORT: Record<string, string> = {
+        CAR: "Car", VAN: "Van", TUK_TUK: "Tuk-Tuk", BUS: "Bus",
+        BOAT: "Boat", MOTORBIKE: "Bike", JEEP: "Jeep", BICYCLE: "Bicycle",
+      };
+      for (const group of vehicleGroups) {
+        const name = VEHICLE_SHORT[group.type] ?? group.type;
+        for (let i = 1; i <= group.count; i++) {
+          const vehicleId = randomUUID();
+          await prisma.$queryRawUnsafe(
+            `INSERT INTO "Room" (id, propertyId, name, maxGuests, isActive, createdAt) VALUES (?, ?, ?, ?, 1, ?)`,
+            vehicleId, property.id, `${name} ${i}`, group.maxPassengers ?? 4, now
+          );
+        }
+      }
+    } else if (!isTransport) {
+      // Auto-create rooms for STAY properties based on bedroom count
       const bedroomCount = (d.bedrooms as number) || 0;
-      const now = new Date().toISOString();
       for (let i = 1; i <= bedroomCount; i++) {
         const roomId = randomUUID();
         await prisma.$queryRawUnsafe(

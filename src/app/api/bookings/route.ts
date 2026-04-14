@@ -69,14 +69,11 @@ export async function POST(req: NextRequest) {
     const { propertyId, checkIn, checkOut, guests, roomsRequested, offerAmount, message,
             pickupPoint, dropPoint, distanceKm } = result.data;
     const rawMealPlan = (body.mealPlan as string | undefined) ?? "ROOM_ONLY";
+    const vehicleType = (body.vehicleType as string | undefined) ?? "";
 
     const checkInDate = new Date(checkIn);
     const checkOutDate = new Date(checkOut);
     const nights = calcNights(checkInDate, checkOutDate);
-
-    if (nights <= 0) {
-      return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
-    }
 
     const property = await prisma.property.findUnique({ where: { id: propertyId } });
     if (!property || property.status !== "ACTIVE") {
@@ -93,13 +90,19 @@ export async function POST(req: NextRequest) {
     const isTransport = catRows[0]?.category === "TRANSPORT";
     const pricePerKm = catRows[0]?.pricePerKm ?? 0;
 
+    // Same-day (0 nights) is valid for transport only
+    if (nights < 0 || (nights === 0 && !isTransport)) {
+      return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
+    }
+
     if (isTransport && (!pickupPoint || !dropPoint)) {
       return NextResponse.json({ error: "Pickup and drop points are required for transport bookings" }, { status: 400 });
     }
 
     // Notification message differs for transport
+    const parkingNote = nights > 0 ? ` (${nights} night${nights !== 1 ? "s" : ""} parking)` : "";
     const notifMsg = isTransport
-      ? `${session.user.name || "A guest"} sent an offer of $${offerAmount} for ${distanceKm ?? "?"} km trip (${nights} nights parking)`
+      ? `${session.user.name || "A guest"} sent an offer of $${offerAmount} for ${distanceKm ?? "?"} km trip${parkingNote}`
       : `${session.user.name || "A guest"} sent an offer of $${offerAmount}/night for ${nights} nights`;
 
     const booking = await prisma.booking.create({
@@ -139,6 +142,27 @@ export async function POST(req: NextRequest) {
             distanceKm  = ${distanceKm ?? null}
         WHERE id = ${booking.id}
       `;
+    }
+
+    // Auto-assign a vehicle room matching the guest's selected type
+    if (isTransport && vehicleType) {
+      const checkOutIso = checkOutDate.toISOString();
+      const checkInIso = checkInDate.toISOString();
+      const matchingRooms = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT r.id FROM "Room" r
+         WHERE r.propertyId = ? AND r.isActive = 1 AND r.name LIKE ?
+           AND r.id NOT IN (
+             SELECT b.roomId FROM "Booking" b
+             WHERE b.roomId IS NOT NULL AND b.status IN ('ACCEPTED', 'COMPLETED')
+               AND b.checkIn < strftime('%s', ?) * 1000
+               AND b.checkOut > strftime('%s', ?) * 1000
+           )
+         LIMIT 1`,
+        propertyId, `${vehicleType} %`, checkOutIso, checkInIso
+      );
+      if (matchingRooms.length > 0) {
+        await prisma.$executeRaw`UPDATE "Booking" SET roomId = ${matchingRooms[0].id} WHERE id = ${booking.id}`;
+      }
     }
 
     await prisma.notification.create({

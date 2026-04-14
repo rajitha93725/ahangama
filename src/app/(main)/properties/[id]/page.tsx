@@ -163,6 +163,7 @@ export default async function PropertyDetailPage({ params }: Props) {
             priceBnB={property.priceBnB ?? null}
             priceHalfBoard={property.priceHalfBoard ?? null}
             priceFullBoard={property.priceFullBoard ?? null}
+            vehicleGroups={property.vehicleGroups ?? null}
           />
         </div>
       </div>

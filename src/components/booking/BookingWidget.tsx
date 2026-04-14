@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { formatCurrency, calcNights } from "@/lib/utils";
 import { useLKRRate } from "@/hooks/useLKRRate";
 import { Calendar, Users, MapPin, Navigation, Car } from "lucide-react";
-import { MEAL_PLANS } from "@/lib/constants";
+import { MEAL_PLANS, VEHICLE_SHORT_NAMES } from "@/lib/constants";
+
+interface VehicleGroupProp { type: string; count: number; maxPassengers: number; }
 
 interface Props {
   propertyId: string;
@@ -18,6 +20,7 @@ interface Props {
   priceBnB?: number | null;
   priceHalfBoard?: number | null;
   priceFullBoard?: number | null;
+  vehicleGroups?: VehicleGroupProp[] | null;
 }
 
 export default function BookingWidget({
@@ -30,6 +33,7 @@ export default function BookingWidget({
   priceBnB = null,
   priceHalfBoard = null,
   priceFullBoard = null,
+  vehicleGroups = null,
 }: Props) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -41,6 +45,8 @@ export default function BookingWidget({
   const [guests, setGuests] = useState(1);
   const [roomsRequested, setRoomsRequested] = useState(1);
   const [availableRooms, setAvailableRooms] = useState<number | null>(null);
+  const [availableRoomNames, setAvailableRoomNames] = useState<string[]>([]);
+  const [selectedVehicleType, setSelectedVehicleType] = useState("");
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -75,9 +81,9 @@ export default function BookingWidget({
   const nights = checkIn && checkOut ? calcNights(checkIn, checkOut) : 0;
   const lkrRate = useLKRRate();
 
-  // Fetch available room count whenever dates change (STAY only)
+  // Fetch available room/vehicle count whenever dates change
   const fetchAvailableRooms = async (ci: string, co: string) => {
-    if (!ci || !co || isTransport) return;
+    if (!ci || !co) return;
     setRoomsLoading(true);
     try {
       const res = await fetch(
@@ -86,7 +92,9 @@ export default function BookingWidget({
       if (res.ok) {
         const data = await res.json();
         setAvailableRooms(data.availableCount ?? 0);
-        setRoomsRequested(1); // reset to 1 whenever dates change
+        setAvailableRoomNames(data.roomNames ?? []);
+        setRoomsRequested(1);
+        setSelectedVehicleType(""); // reset vehicle type selection on date change
       }
     } catch {
       setAvailableRooms(null);
@@ -112,6 +120,7 @@ export default function BookingWidget({
       if (!dropPoint.trim()) { setError("Please enter a drop point"); return; }
       if (!distanceKm || parseFloat(distanceKm) <= 0) { setError("Please enter distance in km"); return; }
       if (nights < 0) { setError("Invalid dates"); return; }
+      if (availableRooms === 0) { setError("No vehicles available for this date"); return; }
     } else {
       if (nights <= 0) { setError("Please select valid dates"); return; }
       if (availableRooms === 0) { setError("No rooms available for these dates"); return; }
@@ -139,7 +148,7 @@ export default function BookingWidget({
         checkIn: new Date(checkIn).toISOString(),
         checkOut: new Date(checkOut || checkIn).toISOString(),
         guests,
-        roomsRequested: isTransport ? 1 : roomsRequested,
+        roomsRequested: roomsRequested,
         offerAmount: finalOffer,
         message,
         mealPlan: isTransport ? undefined : mealPlan,
@@ -148,6 +157,7 @@ export default function BookingWidget({
         payload.pickupPoint = pickupPoint;
         payload.dropPoint = dropPoint;
         payload.distanceKm = parseFloat(distanceKm);
+        if (selectedVehicleType) payload.vehicleType = selectedVehicleType;
       }
 
       const res = await fetch("/api/bookings", {
@@ -244,7 +254,7 @@ export default function BookingWidget({
             </div>
           </div>
 
-          {/* Dates (for parking nights) */}
+          {/* Dates + vehicle availability */}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs font-medium text-gray-700 block mb-1">Start Date</label>
@@ -254,7 +264,11 @@ export default function BookingWidget({
                   type="date"
                   value={checkIn}
                   min={new Date().toISOString().split("T")[0]}
-                  onChange={(e) => setCheckIn(e.target.value)}
+                  onChange={(e) => {
+                    setCheckIn(e.target.value);
+                    const co = checkOut || new Date(new Date(e.target.value).getTime() + 86400000).toISOString().split("T")[0];
+                    fetchAvailableRooms(e.target.value, co);
+                  }}
                   required
                   className="w-full pl-8 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
                 />
@@ -270,29 +284,112 @@ export default function BookingWidget({
                   type="date"
                   value={checkOut}
                   min={checkIn || new Date().toISOString().split("T")[0]}
-                  onChange={(e) => setCheckOut(e.target.value)}
+                  onChange={(e) => {
+                    setCheckOut(e.target.value);
+                    if (checkIn) fetchAvailableRooms(checkIn, e.target.value);
+                  }}
                   className="w-full pl-8 pr-2 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
                 />
               </div>
             </div>
           </div>
 
-          {/* Passengers */}
-          <div>
-            <label className="text-xs font-medium text-gray-700 block mb-1">Passengers</label>
-            <div className="relative">
-              <Users className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <select
-                value={guests}
-                onChange={(e) => setGuests(parseInt(e.target.value))}
-                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none appearance-none"
-              >
-                {Array.from({ length: maxGuests }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>{n} passenger{n !== 1 ? "s" : ""}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+          {/* Vehicle availability — grouped by type */}
+          {checkIn && (() => {
+            if (roomsLoading) return (
+              <p className="text-xs text-gray-400">Checking vehicle availability…</p>
+            );
+            if (availableRooms === 0) return (
+              <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                All vehicles booked for this date — try a different date.
+              </p>
+            );
+            if (availableRoomNames.length === 0) return null;
+
+            // Group available room names by type: "Van 1", "Van 2" → { Van: 2 }
+            const typeMap: Record<string, number> = {};
+            for (const name of availableRoomNames) {
+              const type = name.replace(/ \d+$/, "").trim();
+              typeMap[type] = (typeMap[type] || 0) + 1;
+            }
+            const typeEntries = Object.entries(typeMap); // [["Van", 3], ["Car", 2]]
+
+            // Find maxPassengers for selected type
+            const selectedTypeMaxPassengers = vehicleGroups
+              ? (vehicleGroups.find((g) => (VEHICLE_SHORT_NAMES[g.type] ?? g.type) === selectedVehicleType)?.maxPassengers ?? maxGuests)
+              : maxGuests;
+
+            const countForSelected = typeMap[selectedVehicleType] ?? 0;
+
+            return (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700 block">Vehicle Type</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {typeEntries.map(([type, avail]) => (
+                    <button key={type} type="button"
+                      onClick={() => { setSelectedVehicleType(type); setRoomsRequested(1); }}
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                        selectedVehicleType === type
+                          ? "border-amber-500 bg-amber-50 text-amber-700"
+                          : "border-gray-200 text-gray-600 hover:border-amber-300"
+                      }`}
+                    >
+                      <span>{type}</span>
+                      <span className={`text-xs ${selectedVehicleType === type ? "text-amber-600" : "text-gray-400"}`}>
+                        {avail} avail.
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {selectedVehicleType && countForSelected > 0 && (
+                  <>
+                    <label className="text-xs font-medium text-gray-700 block mt-1">
+                      Number of {selectedVehicleType}s
+                    </label>
+                    <div className="relative">
+                      <Car className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <select
+                        value={roomsRequested}
+                        onChange={(e) => setRoomsRequested(parseInt(e.target.value))}
+                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none appearance-none"
+                      >
+                        {Array.from({ length: countForSelected }, (_, i) => i + 1).map((n) => (
+                          <option key={n} value={n}>{n} {selectedVehicleType}{n !== 1 ? "s" : ""}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Passengers — capped to selected vehicle type's max seats */}
+          {(() => {
+            const cap = selectedVehicleType && vehicleGroups
+              ? (vehicleGroups.find((g) => (VEHICLE_SHORT_NAMES[g.type] ?? g.type) === selectedVehicleType)?.maxPassengers ?? maxGuests)
+              : maxGuests;
+            return (
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">
+                  Passengers {selectedVehicleType && <span className="text-gray-400 font-normal">(max {cap} per {selectedVehicleType})</span>}
+                </label>
+                <div className="relative">
+                  <Users className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <select
+                    value={guests}
+                    onChange={(e) => setGuests(parseInt(e.target.value))}
+                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none appearance-none"
+                  >
+                    {Array.from({ length: cap }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>{n} passenger{n !== 1 ? "s" : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Live total breakdown */}
           {(parseFloat(distanceKm) > 0 || nights > 0) && (

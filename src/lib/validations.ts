@@ -49,11 +49,12 @@ export const TransportSchema = z.object({
   pricePerNight: z.number().min(0, "Parking charge must be at least $0"),  // per-night parking charge
   pricePerKm: z.number().min(0, "Per km charge must be at least $0"),
   minPrice: z.number().min(1, "Minimum price must be at least $1"),
-  maxGuests: z.number().int().min(1).max(20),
+  maxGuests: z.number().int().min(1).max(70),
   bedrooms: z.number().int().min(0).max(0).default(0),
   bathrooms: z.number().int().min(0).max(0).default(0),
   beds: z.number().int().min(0).max(0).default(0),
   amenities: z.array(z.string()).optional(),
+  vehicleGroups: z.array(z.object({ type: z.string(), count: z.number().int().min(1), maxPassengers: z.number().int().min(1).max(70).default(4) })).optional(),
 });
 
 export const SearchSchema = z.object({

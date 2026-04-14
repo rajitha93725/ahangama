@@ -68,6 +68,12 @@ export const TRANSPORT_TYPES = [
   { value: "BICYCLE", label: "Bicycle" },
 ] as const;
 
+// Short singular names for vehicle room labels (e.g. "Van 1", "Car 2")
+export const VEHICLE_SHORT_NAMES: Record<string, string> = {
+  CAR: "Car", VAN: "Van", TUK_TUK: "Tuk-Tuk", BUS: "Bus",
+  BOAT: "Boat", MOTORBIKE: "Bike", JEEP: "Jeep", BICYCLE: "Bicycle",
+};
+
 export const MEAL_PLANS = [
   { value: "ROOM_ONLY", label: "Room Only", short: "RO", color: "bg-gray-100 text-gray-600" },
   { value: "BED_BREAKFAST", label: "Bed & Breakfast", short: "B&B", color: "bg-amber-100 text-amber-700" },

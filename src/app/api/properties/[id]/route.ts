@@ -22,10 +22,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Enrich with columns the stale Prisma client doesn't know about
-  const extras = await prisma.$queryRaw<{ category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }[]>`
-    SELECT category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard FROM "Property" WHERE id = ${id}
+  const extras = await prisma.$queryRaw<{ category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null; vehicleGroups: string | null }[]>`
+    SELECT category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard, vehicleGroups FROM "Property" WHERE id = ${id}
   `;
-  const { category = "STAY", pricePerKm = null, mealPlan = "ROOM_ONLY", priceBnB = null, priceHalfBoard = null, priceFullBoard = null } = extras[0] ?? {};
+  const { category = "STAY", pricePerKm = null, mealPlan = "ROOM_ONLY", priceBnB = null, priceHalfBoard = null, priceFullBoard = null, vehicleGroups: vehicleGroupsRaw = null } = extras[0] ?? {};
+  const vehicleGroups = vehicleGroupsRaw ? JSON.parse(vehicleGroupsRaw) : null;
 
   const avgRating =
     property.reviews.length > 0
@@ -45,7 +46,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   return NextResponse.json({
     ...property, category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard,
-    avgRating, reviewCount: property.reviews.length, propertyRating, propertyRatingCount,
+    vehicleGroups, avgRating, reviewCount: property.reviews.length, propertyRating, propertyRatingCount,
   });
 }
 

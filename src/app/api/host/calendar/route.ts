@@ -37,6 +37,7 @@ export interface PropertyCalendarEntry {
   id: string;
   title: string;
   district: string;
+  isTransport: boolean;
   rooms: RoomCalendarEntry[];
   unassignedBookings: UnassignedBookingEntry[];
   totalRooms: number;
@@ -84,6 +85,16 @@ export async function GET(req: NextRequest) {
 
   const propertyIds = properties.map((p) => p.id);
   const propPlaceholders = propertyIds.map(() => "?").join(",");
+
+  // Fetch category for each property (stale Prisma client doesn't know this column)
+  const categoryMap: Record<string, boolean> = {};
+  if (propertyIds.length > 0) {
+    const catRows = await prisma.$queryRawUnsafe<{ id: string; category: string }[]>(
+      `SELECT id, category FROM "Property" WHERE id IN (${propPlaceholders})`,
+      ...propertyIds
+    );
+    for (const r of catRows) categoryMap[r.id] = r.category === "TRANSPORT";
+  }
 
   // 2. Unassigned confirmed Ahangama bookings (no roomId) active on this day
   //    These are bookings confirmed in the Ahangama system but not yet linked to a specific room
@@ -237,6 +248,7 @@ export async function GET(req: NextRequest) {
 
     return {
       ...property,
+      isTransport: categoryMap[property.id] ?? false,
       rooms: roomEntries,
       unassignedBookings: unassigned,
       totalRooms: rooms.length,
