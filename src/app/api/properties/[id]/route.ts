@@ -45,8 +45,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const propertyRatingCount = prRows.length;
 
   // Seeded feedback rows (isSeeded=1) — displayed as default reviews
-  const seededFeedback = await prisma.$queryRawUnsafe<{ avgScore: number; createdAt: string }[]>(
-    `SELECT avgScore, createdAt FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1 ORDER BY createdAt DESC`,
+  const seededFeedback = await prisma.$queryRawUnsafe<{ avgScore: number; createdAt: string; comment: string | null }[]>(
+    `SELECT avgScore, createdAt, comment FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1 ORDER BY createdAt DESC`,
     id
   );
 

@@ -82,7 +82,7 @@ export default async function PropertyDetailPage({ params }: Props) {
                 <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                 <span className="font-semibold">{property.propertyRating.toFixed(1)}</span>
                 <span className="text-gray-400">/ 10</span>
-                <span className="text-gray-400">({property.propertyRatingCount ?? property.reviewCount} ratings)</span>
+                <span className="text-gray-400">({property.propertyRatingCount ?? property.reviewCount} Reviews)</span>
               </>
             ) : (
               <>
@@ -295,30 +295,35 @@ export default async function PropertyDetailPage({ params }: Props) {
           {property.seededFeedback?.length > 0 && (
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                Featured Ratings
+                Featured Reviews
                 {property.propertyRating != null && (
                   <span className="ml-2 text-sm font-normal text-gray-500">
                     · {property.propertyRating.toFixed(1)} / 10
-                    <span className="text-gray-400 ml-1">({property.propertyRatingCount ?? property.seededFeedback.length})</span>
+                    <span className="text-gray-400 ml-1">({property.propertyRatingCount ?? property.seededFeedback.length} Reviews)</span>
                   </span>
                 )}
               </h3>
               <p className="text-xs text-gray-400 mb-4">Based on verified guest experiences</p>
               <div className="space-y-3">
-                {(property.seededFeedback as { avgScore: number; createdAt: string }[]).map((fb, i) => (
-                  <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-                    <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-700 text-xs font-bold flex-shrink-0">
-                      {i + 1}
+                {(property.seededFeedback as { avgScore: number; createdAt: string; comment?: string | null }[]).map((fb, i) => (
+                  <div key={i} className="py-3 border-b border-gray-50 last:border-0">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-700 text-xs font-bold flex-shrink-0">
+                        {i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-700">Verified Guest {i + 1}</p>
+                        <p className="text-xs text-gray-400">{formatDate(fb.createdAt)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <StarRating value={ratingToStars(fb.avgScore)} readonly size="sm" />
+                        <span className="text-xs font-semibold text-gray-700">{fb.avgScore.toFixed(1)}</span>
+                        <span className="text-xs text-gray-400">/ 10</span>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-700">Verified Guest</p>
-                      <p className="text-xs text-gray-400">{formatDate(fb.createdAt)}</p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <StarRating value={ratingToStars(fb.avgScore)} readonly size="sm" />
-                      <span className="text-xs font-semibold text-gray-700">{fb.avgScore.toFixed(1)}</span>
-                      <span className="text-xs text-gray-400">/ 10</span>
-                    </div>
+                    {fb.comment && (
+                      <p className="text-sm text-gray-600 mt-1.5 ml-11 leading-relaxed">{fb.comment}</p>
+                    )}
                   </div>
                 ))}
               </div>

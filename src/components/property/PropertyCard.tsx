@@ -69,30 +69,38 @@ export default function PropertyCard({
         <div className="p-4">
           <div className="flex items-start justify-between gap-2 mb-1">
             <h3 className="font-semibold text-gray-900 text-sm line-clamp-1 flex-1">{title}</h3>
-            {displayRating !== null && (
-              <div className="flex items-center gap-1 flex-shrink-0">
-                {starCount !== null && Array.from({ length: 5 }, (_, i) => {
-                  const full = starCount >= i + 1;
-                  const half = !full && starCount >= i + 0.5;
-                  return (
-                    <span key={i} className="relative inline-flex">
-                      <Star className="w-3 h-3 fill-gray-200 text-gray-200" />
-                      {(full || half) && (
-                        <span className={`absolute inset-0 overflow-hidden ${half ? "w-1/2" : "w-full"}`}>
-                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                        </span>
-                      )}
-                    </span>
-                  );
-                })}
-                <span className="text-xs font-medium text-gray-700 ml-0.5">
-                  {propertyRating != null ? propertyRating.toFixed(1) : (avgRating?.toFixed(1) ?? "")}
-                </span>
-                <span className="text-xs text-gray-400">
-                  ({propertyRating != null ? (propertyRatingCount ?? reviewCount) : reviewCount})
-                </span>
-              </div>
-            )}
+            {displayRating !== null && (() => {
+              const count = propertyRating != null ? (propertyRatingCount ?? reviewCount) : reviewCount;
+              return (
+                <div className="relative group flex items-center gap-1 flex-shrink-0 cursor-default">
+                  {/* Hover tooltip */}
+                  <div className="pointer-events-none absolute bottom-full right-0 mb-1.5 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                    <div className="bg-gray-900 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+                      {title} has {count} Review{count !== 1 ? "s" : ""}
+                    </div>
+                    <div className="absolute top-full right-3 border-4 border-transparent border-t-gray-900" />
+                  </div>
+                  {starCount !== null && Array.from({ length: 5 }, (_, i) => {
+                    const full = starCount >= i + 1;
+                    const half = !full && starCount >= i + 0.5;
+                    return (
+                      <span key={i} className="relative inline-flex">
+                        <Star className="w-3 h-3 fill-gray-200 text-gray-200" />
+                        {(full || half) && (
+                          <span className={`absolute inset-0 overflow-hidden ${half ? "w-1/2" : "w-full"}`}>
+                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                  <span className="text-xs font-medium text-gray-700 ml-0.5">
+                    {propertyRating != null ? propertyRating.toFixed(1) : (avgRating?.toFixed(1) ?? "")}
+                  </span>
+                  <span className="text-xs text-gray-400">({count})</span>
+                </div>
+              );
+            })()}
           </div>
 
           <div className="flex items-center gap-1 text-gray-500 text-xs mb-2">
