@@ -424,10 +424,12 @@ export default function PropertyForm() {
                 return (
                   <div key={rt._id} className="border border-gray-200 rounded-xl overflow-hidden">
                     {/* Header row */}
-                    <button
-                      type="button"
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setExpandedRoomType(isOpen ? null : rt._id)}
-                      className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                      onKeyDown={(e) => e.key === "Enter" && setExpandedRoomType(isOpen ? null : rt._id)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer select-none"
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-7 h-7 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 text-xs font-bold">
@@ -453,7 +455,7 @@ export default function PropertyForm() {
                         </button>
                         <span className="text-gray-400 text-xs">{isOpen ? "▲" : "▼"}</span>
                       </div>
-                    </button>
+                    </div>
 
                     {/* Expanded details */}
                     {isOpen && (
