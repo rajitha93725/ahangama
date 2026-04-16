@@ -39,7 +39,7 @@ export default function PropertyCard({
   const isTransport = category === "TRANSPORT";
 
   return (
-    <Link href={`/properties/${id}`} className="group block">
+    <Link href={`/properties/${id}`} className="group/card block">
       <div className="rounded-2xl overflow-hidden bg-white border border-gray-100 hover:shadow-lg transition-shadow duration-200">
         {/* Image */}
         <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-teal-50 to-teal-100">
@@ -48,7 +48,7 @@ export default function PropertyCard({
               src={rawImg}
               alt={title}
               onError={() => setImgError(true)}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-300"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
@@ -56,7 +56,7 @@ export default function PropertyCard({
             </div>
           )}
           <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-medium text-gray-700">
-            {propertyType.replace(/_/g, " ")}
+            {propertyType.split("_").map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(" ")}
           </div>
           {isTransport && (
             <div className="absolute top-3 right-3 bg-amber-500/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-medium text-white">
@@ -72,9 +72,9 @@ export default function PropertyCard({
             {displayRating !== null && (() => {
               const count = propertyRating != null ? (propertyRatingCount ?? reviewCount) : reviewCount;
               return (
-                <div className="relative group flex items-center gap-1 flex-shrink-0 cursor-default">
+                <div className="relative group/rating flex items-center gap-1 flex-shrink-0 cursor-default">
                   {/* Hover tooltip */}
-                  <div className="pointer-events-none absolute bottom-full right-0 mb-1.5 z-20 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  <div className="pointer-events-none absolute bottom-full right-0 mb-1.5 z-20 opacity-0 group-hover/rating:opacity-100 transition-opacity duration-150">
                     <div className="bg-gray-900 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
                       {title} has {count} Review{count !== 1 ? "s" : ""}
                     </div>
