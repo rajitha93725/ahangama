@@ -8,8 +8,17 @@ import {
   MapPin, Users, BedDouble, Bath, Car, Navigation, Star,
   Wifi, Waves, Wind, UtensilsCrossed, Tv, Droplets, TreePine,
   Dumbbell, Coffee, Beer, Shield, PawPrint, Sunset, Mountain, Map,
-  Home, Shirt,
+  Home, Shirt, BadgeCheck,
 } from "lucide-react";
+
+/** Masks a name: capitalises first letter of each word, replaces rest with *** */
+function maskName(name: string | null | undefined): string {
+  if (!name?.trim()) return "G***";
+  return name.trim().split(/\s+/).map((word) => {
+    if (!word) return "";
+    return word[0].toUpperCase() + "***";
+  }).join(" ");
+}
 import type { LucideIcon } from "lucide-react";
 
 const AMENITY_ICON_MAP: Record<string, LucideIcon> = {
@@ -280,11 +289,17 @@ export default async function PropertyDetailPage({ params }: Props) {
                   {seeded.map((fb, i) => (
                     <div key={`s-${i}`} className="py-3">
                       <div className="flex items-center gap-3">
+                        {/* Anonymous avatar — initial only */}
                         <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-700 text-xs font-bold flex-shrink-0">
-                          {i + 1}
+                          V
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-700">Verified Guest {i + 1}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-medium text-gray-800">V*** G***</p>
+                            <span className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded-full text-xs font-medium">
+                              <BadgeCheck className="w-3 h-3" /> Verified
+                            </span>
+                          </div>
                           <p className="text-xs text-gray-400">{formatDate(fb.createdAt)}</p>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -307,31 +322,37 @@ export default async function PropertyDetailPage({ params }: Props) {
                           <p className="text-xs text-gray-400 font-medium">{guests.length} more review{guests.length !== 1 ? "s" : ""} from guests</p>
                         </div>
                       )}
-                      {guests.map((fb, i) => (
-                        <div key={`g-${i}`} className="py-3">
-                          <div className="flex items-center gap-3">
-                            {fb.guestImage ? (
-                              <img src={fb.guestImage} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
-                            ) : (
+                      {guests.map((fb, i) => {
+                        const masked = maskName(fb.guestName);
+                        const initial = masked[0] ?? "G";
+                        return (
+                          <div key={`g-${i}`} className="py-3">
+                            <div className="flex items-center gap-3">
+                              {/* Masked avatar — first letter only, no real photo */}
                               <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 text-xs font-semibold flex-shrink-0">
-                                {getInitials(fb.guestName)}
+                                {initial}
                               </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-sm font-medium text-gray-800">{masked}</p>
+                                  <span className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded-full text-xs font-medium">
+                                    <BadgeCheck className="w-3 h-3" /> Verified
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-400">{formatDate(fb.createdAt)}</p>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <StarRating value={ratingToStars(fb.avgScore)} readonly size="sm" />
+                                <span className="text-xs font-semibold text-gray-700">{fb.avgScore.toFixed(1)}</span>
+                                <span className="text-xs text-gray-400">/ 10</span>
+                              </div>
+                            </div>
+                            {fb.comment && (
+                              <p className="text-sm text-gray-600 mt-1.5 ml-11 leading-relaxed">{fb.comment}</p>
                             )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900">{fb.guestName ?? "Guest"}</p>
-                              <p className="text-xs text-gray-400">{formatDate(fb.createdAt)}</p>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <StarRating value={ratingToStars(fb.avgScore)} readonly size="sm" />
-                              <span className="text-xs font-semibold text-gray-700">{fb.avgScore.toFixed(1)}</span>
-                              <span className="text-xs text-gray-400">/ 10</span>
-                            </div>
                           </div>
-                          {fb.comment && (
-                            <p className="text-sm text-gray-600 mt-1.5 ml-11 leading-relaxed">{fb.comment}</p>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </>
                   )}
                 </div>
