@@ -108,6 +108,7 @@ model Property {
   savedBy          SavedProperty[]
   availability     Availability[]
   rooms            Room[]
+  roomTypes        RoomType[]
   externalBookings ExternalBooking[]
 }
 
@@ -153,16 +154,39 @@ model SavedProperty {
 
 // ─── BOOKINGS & NEGOTIATION ────────────────────────────────────────────────
 
+model RoomType {
+  id            String   @id @default(cuid())
+  propertyId    String
+  typeName      String   // SINGLE | DOUBLE | TWIN | TRIPLE | FAMILY | DELUXE | SUITE | EXECUTIVE | STUDIO | VILLA | SEA_VIEW | GARDEN_VIEW | BUDGET | HONEYMOON_SUITE
+  displayLabel  String   // Human-readable label, e.g. "Deluxe Room"
+  roomCount     Int      @default(1)
+  beds          Int      @default(1)
+  maxGuests     Int      @default(2)
+  bathrooms     Int      @default(1)
+  amenities     String   @default("[]") // JSON array of amenity strings
+  pricePerNight Float
+  priceBnB      Float?
+  priceHalfBoard Float?
+  priceFullBoard Float?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  rooms    Room[]
+}
+
 model Room {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   propertyId   String
+  roomTypeId   String?
   name         String
   description  String?
-  maxGuests    Int      @default(2)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  maxGuests    Int       @default(2)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
 
   property         Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomType         RoomType?        @relation(fields: [roomTypeId], references: [id])
   bookings         Booking[]
   externalBookings ExternalBooking[]
 }

@@ -1,26 +1,16 @@
 export const STAY_QUESTIONS = [
-  "Overall cleanliness of the property",
-  "Accuracy of the listing description",
+  "Overall cleanliness of the property and provided amenities",
   "Location and surroundings",
   "Value for money",
-  "Host communication and responsiveness",
-  "Check-in experience",
-  "Comfort of beds and sleeping areas",
-  "Kitchen and bathroom facilities",
-  "Amenities provided (WiFi, AC, etc.)",
+  "Host communication and kindness",
   "Would you recommend this property?",
 ];
 
 export const TRANSPORT_QUESTIONS = [
-  "Overall cleanliness of the vehicle",
-  "Driver professionalism and behaviour",
+  "Overall cleanliness of the vehicle and vehicle amenities",
   "Punctuality and time management",
   "Value for money",
-  "Vehicle comfort and condition",
-  "Air conditioning and in-car amenities",
-  "Knowledge of routes and local areas",
-  "Communication before and during the trip",
-  "Safety and driving standards",
+  "Safety and Communication",
   "Would you recommend this service?",
 ];
 

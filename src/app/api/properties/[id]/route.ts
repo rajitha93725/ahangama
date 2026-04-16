@@ -44,9 +44,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       : null;
   const propertyRatingCount = prRows.filter((r) => !("isSeeded" in r)).length || prRows.length;
 
+  // Fetch room types for this property
+  const roomTypeRows = await prisma.$queryRawUnsafe<{
+    id: string; typeName: string; displayLabel: string; roomCount: number;
+    beds: number; maxGuests: number; bathrooms: number; amenities: string;
+    pricePerNight: number; priceBnB: number | null; priceHalfBoard: number | null;
+    priceFullBoard: number | null;
+  }[]>(
+    `SELECT id, typeName, displayLabel, roomCount, beds, maxGuests, bathrooms, amenities,
+            pricePerNight, priceBnB, priceHalfBoard, priceFullBoard
+     FROM "RoomType" WHERE propertyId = ? ORDER BY rowid ASC`,
+    id
+  );
+  const roomTypes = roomTypeRows.map((rt) => ({
+    ...rt,
+    amenities: (() => { try { return JSON.parse(rt.amenities); } catch { return []; } })(),
+  }));
+
   return NextResponse.json({
     ...property, category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard,
     vehicleGroups, avgRating, reviewCount: property.reviews.length, propertyRating, propertyRatingCount,
+    roomTypes: roomTypes.length > 0 ? roomTypes : null,
   });
 }
 

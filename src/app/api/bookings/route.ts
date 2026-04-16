@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
             pickupPoint, dropPoint, distanceKm } = result.data;
     const rawMealPlan = (body.mealPlan as string | undefined) ?? "ROOM_ONLY";
     const vehicleType = (body.vehicleType as string | undefined) ?? "";
+    const roomSelections = body.roomSelections as Array<{ typeId: string; typeName: string; displayLabel: string; count: number }> | undefined;
 
     const checkInDate = new Date(checkIn);
     const checkOutDate = new Date(checkOut);
@@ -132,7 +133,8 @@ export async function POST(req: NextRequest) {
     // Write columns the stale Prisma client doesn't know about yet
     const finalRoomsRequested = roomsRequested ?? 1;
     const finalMealPlan = isTransport ? "ROOM_ONLY" : rawMealPlan;
-    await prisma.$executeRaw`UPDATE "Booking" SET roomsRequested = ${finalRoomsRequested}, mealPlan = ${finalMealPlan} WHERE id = ${booking.id}`;
+    const finalRoomSelections = roomSelections?.length ? JSON.stringify(roomSelections) : null;
+    await prisma.$executeRaw`UPDATE "Booking" SET roomsRequested = ${finalRoomsRequested}, mealPlan = ${finalMealPlan}, roomSelections = ${finalRoomSelections} WHERE id = ${booking.id}`;
 
     if (isTransport && pickupPoint && dropPoint) {
       await prisma.$executeRaw`

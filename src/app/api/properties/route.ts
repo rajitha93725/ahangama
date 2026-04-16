@@ -147,7 +147,20 @@ export async function POST(req: NextRequest) {
     const priceBnB = (d.priceBnB != null && d.priceBnB !== "") ? Number(d.priceBnB) : null;
     const priceHalfBoard = (d.priceHalfBoard != null && d.priceHalfBoard !== "") ? Number(d.priceHalfBoard) : null;
     const priceFullBoard = (d.priceFullBoard != null && d.priceFullBoard !== "") ? Number(d.priceFullBoard) : null;
-    const vehicleGroups = d.vehicleGroups as { type: string; count: number }[] | undefined;
+    const vehicleGroups = d.vehicleGroups as { type: string; count: number; maxPassengers?: number }[] | undefined;
+    const roomTypesInput = body.roomTypes as Array<{
+      typeName: string;
+      displayLabel: string;
+      roomCount: number;
+      beds: number;
+      maxGuests: number;
+      bathrooms: number;
+      amenities: string[];
+      pricePerNight: number;
+      priceBnB: number | null;
+      priceHalfBoard: number | null;
+      priceFullBoard: number | null;
+    }> | undefined;
 
     const property = await prisma.property.create({
       data: {
@@ -204,8 +217,29 @@ export async function POST(req: NextRequest) {
           );
         }
       }
+    } else if (!isTransport && roomTypesInput?.length) {
+      // Create RoomType records and named Room instances for each type
+      for (const rt of roomTypesInput) {
+        const rtId = randomUUID();
+        await prisma.$queryRawUnsafe(
+          `INSERT INTO "RoomType" (id, propertyId, typeName, displayLabel, roomCount, beds, maxGuests, bathrooms, amenities, pricePerNight, priceBnB, priceHalfBoard, priceFullBoard, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          rtId, property.id, rt.typeName, rt.displayLabel, rt.roomCount,
+          rt.beds, rt.maxGuests, rt.bathrooms,
+          JSON.stringify(rt.amenities ?? []),
+          rt.pricePerNight, rt.priceBnB ?? null, rt.priceHalfBoard ?? null, rt.priceFullBoard ?? null,
+          now, now
+        );
+        for (let i = 1; i <= rt.roomCount; i++) {
+          const roomId = randomUUID();
+          await prisma.$queryRawUnsafe(
+            `INSERT INTO "Room" (id, propertyId, roomTypeId, name, maxGuests, isActive, createdAt) VALUES (?, ?, ?, ?, ?, 1, ?)`,
+            roomId, property.id, rtId, `${rt.displayLabel} ${i}`, rt.maxGuests, now
+          );
+        }
+      }
     } else if (!isTransport) {
-      // Auto-create rooms for STAY properties based on bedroom count
+      // Fallback: auto-create rooms from bedroom count for properties without room types
       const bedroomCount = (d.bedrooms as number) || 0;
       for (let i = 1; i <= bedroomCount; i++) {
         const roomId = randomUUID();

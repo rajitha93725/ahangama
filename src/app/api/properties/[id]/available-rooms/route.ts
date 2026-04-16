@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/properties/[id]/available-rooms?checkIn=...&checkOut=...
-// Returns how many rooms are free for the given date range.
-// Used by the booking widget to cap the "number of rooms" dropdown.
+// Returns available room count overall, plus per-room-type breakdown if the property has types.
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -27,18 +26,20 @@ export async function GET(
   const checkOutIso = checkOutDate.toISOString();
 
   // Get all active rooms for this property
-  const rooms = await prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
-    `SELECT id, name FROM "Room" WHERE propertyId = ? AND isActive = 1 ORDER BY ROWID ASC`,
+  const rooms = await prisma.$queryRawUnsafe<{ id: string; name: string; maxGuests: number; roomTypeId: string | null }[]>(
+    `SELECT id, name, maxGuests, roomTypeId FROM "Room" WHERE propertyId = ? AND isActive = 1 ORDER BY ROWID ASC`,
     propertyId
   );
 
   if (rooms.length === 0) {
-    return NextResponse.json({ availableCount: 0 });
+    return NextResponse.json({ availableCount: 0, totalRooms: 0, roomNames: [], roomTypes: null });
   }
 
-  // For each room, check if it has any conflicting booking
+  // Check availability for each room
   let availableCount = 0;
   const roomNames: string[] = [];
+  const availableByTypeId: Record<string, number> = {};
+
   for (const room of rooms) {
     const extConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `SELECT id FROM "ExternalBooking"
@@ -59,7 +60,47 @@ export async function GET(
 
     availableCount++;
     roomNames.push(room.name);
+    if (room.roomTypeId) {
+      availableByTypeId[room.roomTypeId] = (availableByTypeId[room.roomTypeId] ?? 0) + 1;
+    }
   }
 
-  return NextResponse.json({ availableCount, totalRooms: rooms.length, roomNames });
+  // Fetch room types (if any) and enrich with availability
+  const roomTypeRows = await prisma.$queryRawUnsafe<{
+    id: string; typeName: string; displayLabel: string;
+    roomCount: number; beds: number; maxGuests: number; bathrooms: number;
+    amenities: string;
+    pricePerNight: number; priceBnB: number | null;
+    priceHalfBoard: number | null; priceFullBoard: number | null;
+  }[]>(
+    `SELECT id, typeName, displayLabel, roomCount, beds, maxGuests, bathrooms, amenities,
+            pricePerNight, priceBnB, priceHalfBoard, priceFullBoard
+     FROM "RoomType" WHERE propertyId = ? ORDER BY rowid ASC`,
+    propertyId
+  );
+
+  const roomTypes = roomTypeRows.length > 0
+    ? roomTypeRows.map((rt) => ({
+        typeId: rt.id,
+        typeName: rt.typeName,
+        displayLabel: rt.displayLabel,
+        total: rt.roomCount,
+        available: availableByTypeId[rt.id] ?? 0,
+        beds: rt.beds,
+        maxGuests: rt.maxGuests,
+        bathrooms: rt.bathrooms,
+        amenities: (() => { try { return JSON.parse(rt.amenities); } catch { return []; } })(),
+        pricePerNight: rt.pricePerNight,
+        priceBnB: rt.priceBnB,
+        priceHalfBoard: rt.priceHalfBoard,
+        priceFullBoard: rt.priceFullBoard,
+      }))
+    : null;
+
+  return NextResponse.json({
+    availableCount,
+    totalRooms: rooms.length,
+    roomNames,
+    roomTypes,
+  });
 }

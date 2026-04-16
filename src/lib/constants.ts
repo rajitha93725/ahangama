@@ -81,6 +81,25 @@ export const MEAL_PLANS = [
   { value: "FULL_BOARD", label: "Full Board", short: "FB", color: "bg-teal-100 text-teal-700" },
 ] as const;
 
+export const ROOM_TYPES = [
+  { value: "SINGLE",          label: "Single Room",          emoji: "" },
+  { value: "DOUBLE",          label: "Double Room",          emoji: "" },
+  { value: "TWIN",            label: "Twin Room",            emoji: "" },
+  { value: "TRIPLE",          label: "Triple Room",          emoji: "" },
+  { value: "FAMILY",          label: "Family Room",          emoji: "" },
+  { value: "DELUXE",          label: "Deluxe Room",          emoji: "" },
+  { value: "SUITE",           label: "Suite Room",           emoji: "" },
+  { value: "EXECUTIVE",       label: "Executive Room",       emoji: "" },
+  { value: "STUDIO",          label: "Studio Room",          emoji: "" },
+  { value: "VILLA",           label: "Villa / Private Room", emoji: "" },
+  { value: "SEA_VIEW",        label: "Sea View Room",        emoji: "🌊" },
+  { value: "GARDEN_VIEW",     label: "Garden View Room",     emoji: "🌿" },
+  { value: "BUDGET",          label: "Budget Room",          emoji: "💰" },
+  { value: "HONEYMOON_SUITE", label: "Honeymoon Suite",      emoji: "💖" },
+] as const;
+
+export type RoomTypeValue = (typeof ROOM_TYPES)[number]["value"];
+
 export const BOOKING_STATUS_LABELS: Record<string, string> = {
   PENDING_OFFER: "Awaiting Response",
   COUNTERED: "Counter Offer Received",

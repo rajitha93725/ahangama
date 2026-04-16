@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PROPERTY_TYPES, AMENITIES, SRI_LANKA_DISTRICTS } from "@/lib/constants";
+import { PROPERTY_TYPES, AMENITIES, SRI_LANKA_DISTRICTS, ROOM_TYPES } from "@/lib/constants";
 import { useLKRRate } from "@/hooks/useLKRRate";
-import { Upload, X, Plus } from "lucide-react";
+import { Upload, X, Plus, Trash2, MapPin } from "lucide-react";
 
 const DISTRICT_COORDS: Record<string, [number, number]> = {
   Colombo: [6.9271, 79.8612],
@@ -29,14 +29,51 @@ const DISTRICT_COORDS: Record<string, [number, number]> = {
   Hambantota: [6.1429, 81.1212],
 };
 
+interface RoomTypeInput {
+  _id: string;
+  typeName: string;
+  displayLabel: string;
+  roomCount: number;
+  beds: number;
+  maxGuests: number;
+  bathrooms: number;
+  amenities: string[];
+  pricePerNight: number;
+  priceBnB: string | number;
+  priceHalfBoard: string | number;
+  priceFullBoard: string | number;
+}
+
+function newRoomType(): RoomTypeInput {
+  return {
+    _id: Math.random().toString(36).slice(2),
+    typeName: "SINGLE",
+    displayLabel: "Single Room",
+    roomCount: 1,
+    beds: 1,
+    maxGuests: 1,
+    bathrooms: 1,
+    amenities: [],
+    pricePerNight: 60,
+    priceBnB: "",
+    priceHalfBoard: "",
+    priceFullBoard: "",
+  };
+}
+
+const STEP_LABELS = ["Basic Info", "Room Types", "Room Rates", "Photos"];
+
 export default function PropertyForm() {
   const router = useRouter();
   const lkrRate = useLKRRate();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [images, setImages] = useState<{ url: string; file?: File }[]>([]);
+  const [images, setImages] = useState<{ url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationSearching, setLocationSearching] = useState(false);
+  const [locationError, setLocationError] = useState("");
 
   const [form, setForm] = useState({
     title: "",
@@ -47,18 +84,14 @@ export default function PropertyForm() {
     district: "Galle",
     latitude: DISTRICT_COORDS["Galle"][0],
     longitude: DISTRICT_COORDS["Galle"][1],
-    pricePerNight: 80,
-    minPrice: 64, // auto = 80% of pricePerNight; kept in sync on submit
-    priceBnB: "" as string | number,
-    priceHalfBoard: "" as string | number,
-    priceFullBoard: "" as string | number,
     currency: "USD",
-    maxGuests: 4,
-    bedrooms: 2,
-    bathrooms: 1,
-    beds: 2,
     amenities: [] as string[],
   });
+
+  const [roomTypes, setRoomTypes] = useState<RoomTypeInput[]>(() => [newRoomType()]);
+  const [expandedRoomType, setExpandedRoomType] = useState<string | null>(
+    () => roomTypes[0]?._id ?? null
+  );
 
   const update = (field: string, value: unknown) => {
     setForm((prev) => {
@@ -81,6 +114,70 @@ export default function PropertyForm() {
     }));
   };
 
+  const updateRoomType = (id: string, field: keyof RoomTypeInput, value: unknown) => {
+    setRoomTypes((prev) =>
+      prev.map((rt) => {
+        if (rt._id !== id) return rt;
+        const updated = { ...rt, [field]: value };
+        if (field === "typeName") {
+          const found = ROOM_TYPES.find((t) => t.value === value);
+          if (found) updated.displayLabel = found.label;
+        }
+        return updated;
+      })
+    );
+  };
+
+  const toggleRoomTypeAmenity = (id: string, name: string) => {
+    setRoomTypes((prev) =>
+      prev.map((rt) =>
+        rt._id !== id
+          ? rt
+          : {
+              ...rt,
+              amenities: rt.amenities.includes(name)
+                ? rt.amenities.filter((a) => a !== name)
+                : [...rt.amenities, name],
+            }
+      )
+    );
+  };
+
+  const addRoomType = () => {
+    const rt = newRoomType();
+    setRoomTypes((prev) => [...prev, rt]);
+    setExpandedRoomType(rt._id);
+  };
+
+  const removeRoomType = (id: string) => {
+    setRoomTypes((prev) => prev.filter((rt) => rt._id !== id));
+    if (expandedRoomType === id) setExpandedRoomType(null);
+  };
+
+  const searchLocation = async () => {
+    if (!locationQuery.trim()) return;
+    setLocationSearching(true);
+    setLocationError("");
+    try {
+      const q = encodeURIComponent(`${locationQuery}, Sri Lanka`);
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
+        { headers: { "Accept-Language": "en" } }
+      );
+      const results = await res.json();
+      if (results.length === 0) {
+        setLocationError("Location not found. Try a more specific address.");
+        return;
+      }
+      const { lat, lon } = results[0];
+      setForm((prev) => ({ ...prev, latitude: parseFloat(lat), longitude: parseFloat(lon) }));
+    } catch {
+      setLocationError("Search failed. Please try again.");
+    } finally {
+      setLocationSearching(false);
+    }
+  };
+
   const handleImageUpload = async (files: FileList) => {
     setUploading(true);
     const formData = new FormData();
@@ -99,14 +196,51 @@ export default function PropertyForm() {
   };
 
   const handleSubmit = async () => {
+    if (roomTypes.length === 0) {
+      setError("Please add at least one room type");
+      return;
+    }
+    for (const rt of roomTypes) {
+      if (!rt.pricePerNight || rt.pricePerNight < 1) {
+        setError(`Please set a Room Only price for ${rt.displayLabel}`);
+        return;
+      }
+    }
     setSubmitting(true);
     setError("");
     try {
-      const autoMinPrice = Math.round(form.pricePerNight * 0.8);
+      // Aggregate property-level stats from room types
+      const totalRooms = roomTypes.reduce((s, rt) => s + rt.roomCount, 0);
+      const maxGuestsTotal = roomTypes.reduce((s, rt) => s + rt.maxGuests * rt.roomCount, 0);
+      const totalBeds = roomTypes.reduce((s, rt) => s + rt.beds * rt.roomCount, 0);
+      const totalBathrooms = roomTypes.reduce((s, rt) => s + rt.bathrooms * rt.roomCount, 0);
+      const minPrice = Math.min(...roomTypes.map((rt) => rt.pricePerNight));
+
       const res = await fetch("/api/properties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, minPrice: autoMinPrice }),
+        body: JSON.stringify({
+          ...form,
+          pricePerNight: minPrice,
+          minPrice: Math.round(minPrice * 0.8),
+          maxGuests: maxGuestsTotal,
+          bedrooms: totalRooms,
+          bathrooms: totalBathrooms,
+          beds: totalBeds,
+          roomTypes: roomTypes.map((rt) => ({
+            typeName: rt.typeName,
+            displayLabel: rt.displayLabel,
+            roomCount: rt.roomCount,
+            beds: rt.beds,
+            maxGuests: rt.maxGuests,
+            bathrooms: rt.bathrooms,
+            amenities: rt.amenities,
+            pricePerNight: rt.pricePerNight,
+            priceBnB: rt.priceBnB === "" ? null : Number(rt.priceBnB) || null,
+            priceHalfBoard: rt.priceHalfBoard === "" ? null : Number(rt.priceHalfBoard) || null,
+            priceFullBoard: rt.priceFullBoard === "" ? null : Number(rt.priceFullBoard) || null,
+          })),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -117,18 +251,19 @@ export default function PropertyForm() {
         throw new Error(data.error || "Failed to create listing");
       }
 
-      // Upload images to property
       if (images.length > 0) {
-        await Promise.all(images.map((img, i) =>
-          fetch(`/api/properties/${data.id}/images`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: img.url, isPrimary: i === 0, order: i }),
-          })
-        ));
+        await Promise.all(
+          images.map((img, i) =>
+            fetch(`/api/properties/${data.id}/images`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: img.url, isPrimary: i === 0, order: i }),
+            })
+          )
+        );
       }
 
-      router.push(`/dashboard/host`);
+      router.push("/dashboard/host");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create listing");
     } finally {
@@ -136,24 +271,28 @@ export default function PropertyForm() {
     }
   };
 
+  const mapSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${form.longitude - 0.03},${form.latitude - 0.03},${form.longitude + 0.03},${form.latitude + 0.03}&layer=mapnik&marker=${form.latitude},${form.longitude}`;
+
   return (
     <div className="space-y-8">
       {/* Steps indicator */}
-      <div className="flex items-center gap-2">
-        {[1, 2, 3].map((s) => (
+      <div className="flex items-center gap-2 flex-wrap">
+        {[1, 2, 3, 4].map((s) => (
           <div key={s} className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${step >= s ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-400"}`}>
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
+                step >= s ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-400"
+              }`}
+            >
               {s}
             </div>
-            {s < 3 && <div className={`h-px w-16 ${step > s ? "bg-teal-600" : "bg-gray-200"}`} />}
+            {s < 4 && <div className={`h-px w-12 ${step > s ? "bg-teal-600" : "bg-gray-200"}`} />}
           </div>
         ))}
-        <span className="ml-2 text-sm text-gray-500">
-          {step === 1 ? "Basic Info" : step === 2 ? "Amenities & Pricing" : "Photos"}
-        </span>
+        <span className="ml-2 text-sm text-gray-500">{STEP_LABELS[step - 1]}</span>
       </div>
 
-      {/* Step 1: Basic Info */}
+      {/* ─── Step 1: Basic Info + Map ─────────────────────────────────────────── */}
       {step === 1 && (
         <div className="space-y-5">
           <div>
@@ -183,7 +322,9 @@ export default function PropertyForm() {
                 onChange={(e) => update("propertyType", e.target.value)}
                 className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
               >
-                {PROPERTY_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {PROPERTY_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -193,7 +334,9 @@ export default function PropertyForm() {
                 onChange={(e) => update("district", e.target.value)}
                 className="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
               >
-                {SRI_LANKA_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                {SRI_LANKA_DISTRICTS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -206,83 +349,196 @@ export default function PropertyForm() {
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
             />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { field: "maxGuests", label: "Max Guests" },
-              { field: "bedrooms", label: "Bedrooms" },
-              { field: "beds", label: "Beds" },
-              { field: "bathrooms", label: "Bathrooms" },
-            ].map(({ field, label }) => (
-              <div key={field}>
-                <label className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={(form as Record<string, unknown>)[field] as number}
-                  onChange={(e) => update(field, parseInt(e.target.value))}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                />
-              </div>
-            ))}
+
+          {/* Map location search + preview */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <MapPin className="w-4 h-4 text-teal-600" />
+              <label className="text-sm font-medium text-gray-700">Location</label>
+              <span className="text-xs text-gray-400">{form.latitude.toFixed(4)}, {form.longitude.toFixed(4)}</span>
+            </div>
+            <div className="flex gap-2 mb-2">
+              <input
+                value={locationQuery}
+                onChange={(e) => setLocationQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), searchLocation())}
+                placeholder="Search address to pin exact location…"
+                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+              />
+              <button
+                type="button"
+                onClick={searchLocation}
+                disabled={locationSearching}
+                className="px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-medium hover:bg-teal-700 disabled:opacity-60 transition-colors"
+              >
+                {locationSearching ? "…" : "Search"}
+              </button>
+            </div>
+            {locationError && <p className="text-xs text-red-500 mb-2">{locationError}</p>}
+            <div className="rounded-xl overflow-hidden border border-gray-200">
+              <iframe
+                key={`${form.latitude}-${form.longitude}`}
+                src={mapSrc}
+                className="w-full h-52"
+                loading="lazy"
+                title="Property location map"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Select your district above to set a rough location, then search for your exact address.
+            </p>
           </div>
         </div>
       )}
 
-      {/* Step 2: Amenities & Pricing */}
+      {/* ─── Step 2: Room Types ──────────────────────────────────────────────── */}
       {step === 2 && (
-        <div className="space-y-6">
-          {/* Mandatory: Room Only rate */}
+        <div className="space-y-5">
           <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Room Rates (USD / night)</p>
-            <div className="max-w-xs">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Room Only <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                <input
-                  type="number" min="1"
-                  value={form.pricePerNight}
-                  onChange={(e) => update("pricePerNight", parseFloat(e.target.value))}
-                  className="w-full pl-7 pr-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                />
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Room Types</p>
+                <p className="text-xs text-gray-400 mt-0.5">Add each type of room your property offers</p>
               </div>
-              {lkrRate && form.pricePerNight > 0 && (
-                <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(form.pricePerNight * lkrRate).toLocaleString()}/night</p>
-              )}
-              {form.pricePerNight > 0 && (
-                <p className="text-xs text-teal-600 mt-1">
-                  Minimum guests can offer: ${Math.round(form.pricePerNight * 0.8)}/night (80%)
-                </p>
-              )}
+              <button
+                type="button"
+                onClick={addRoomType}
+                className="flex items-center gap-1.5 px-3 py-2 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-sm font-medium hover:bg-teal-100 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Room Type
+              </button>
             </div>
-          </div>
 
-          {/* Optional: Meal plan rates */}
-          <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Meal Plan Rates <span className="text-gray-400 font-normal normal-case">(optional — leave blank if not offered)</span></p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-              {[
-                { label: "Bed & Breakfast", field: "priceBnB" },
-                { label: "Half Board", field: "priceHalfBoard" },
-                { label: "Full Board", field: "priceFullBoard" },
-              ].map(({ label, field }) => {
-                const val = (form as Record<string, unknown>)[field] as string | number;
-                const numVal = typeof val === "number" ? val : parseFloat(val as string);
+            {roomTypes.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed border-gray-200 rounded-xl text-gray-400">
+                <p className="text-sm">No room types added yet</p>
+                <button type="button" onClick={addRoomType} className="mt-2 text-teal-600 text-sm hover:underline">
+                  Add your first room type →
+                </button>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {roomTypes.map((rt) => {
+                const isOpen = expandedRoomType === rt._id;
                 return (
-                  <div key={field}>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                      <input
-                        type="number" min="1" placeholder="—"
-                        value={val === "" ? "" : val}
-                        onChange={(e) => update(field, e.target.value === "" ? "" : parseFloat(e.target.value))}
-                        className="w-full pl-7 pr-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                      />
-                    </div>
-                    {lkrRate && !isNaN(numVal) && numVal > 0 && (
-                      <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(numVal * lkrRate).toLocaleString()}/night</p>
+                  <div key={rt._id} className="border border-gray-200 rounded-xl overflow-hidden">
+                    {/* Header row */}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedRoomType(isOpen ? null : rt._id)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 text-xs font-bold">
+                          {rt.roomCount}
+                        </div>
+                        <div>
+                          <span className="text-sm font-semibold text-gray-900">{rt.displayLabel}</span>
+                          <span className="ml-2 text-xs text-gray-400">
+                            {rt.beds} bed{rt.beds !== 1 ? "s" : ""} · max {rt.maxGuests} · {rt.bathrooms} bath
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {rt.amenities.length > 0 && (
+                          <span className="text-xs text-teal-600 font-medium">{rt.amenities.length} amenities</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); removeRoomType(rt._id); }}
+                          className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-gray-400 text-xs">{isOpen ? "▲" : "▼"}</span>
+                      </div>
+                    </button>
+
+                    {/* Expanded details */}
+                    {isOpen && (
+                      <div className="px-4 py-4 space-y-4">
+                        {/* Room type selector */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Room Type</label>
+                            <select
+                              value={rt.typeName}
+                              onChange={(e) => updateRoomType(rt._id, "typeName", e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                            >
+                              {ROOM_TYPES.map((t) => (
+                                <option key={t.value} value={t.value}>
+                                  {t.emoji ? `${t.emoji} ` : ""}{t.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Number of Rooms</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={50}
+                              value={rt.roomCount}
+                              onChange={(e) => updateRoomType(rt._id, "roomCount", parseInt(e.target.value) || 1)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Beds per room</label>
+                            <input
+                              type="number" min={1} max={10}
+                              value={rt.beds}
+                              onChange={(e) => updateRoomType(rt._id, "beds", parseInt(e.target.value) || 1)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Max guests per room</label>
+                            <input
+                              type="number" min={1} max={20}
+                              value={rt.maxGuests}
+                              onChange={(e) => updateRoomType(rt._id, "maxGuests", parseInt(e.target.value) || 1)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Bathrooms per room</label>
+                            <input
+                              type="number" min={0} max={10}
+                              value={rt.bathrooms}
+                              onChange={(e) => updateRoomType(rt._id, "bathrooms", parseInt(e.target.value))}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Room amenities */}
+                        <div>
+                          <p className="text-xs font-medium text-gray-600 mb-2">Room Amenities</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                            {AMENITIES.map((a) => (
+                              <button
+                                key={a.name}
+                                type="button"
+                                onClick={() => toggleRoomTypeAmenity(rt._id, a.name)}
+                                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-xs transition-all ${
+                                  rt.amenities.includes(a.name)
+                                    ? "border-teal-500 bg-teal-50 text-teal-700"
+                                    : "border-gray-200 text-gray-600 hover:border-gray-300"
+                                }`}
+                              >
+                                <span>{rt.amenities.includes(a.name) ? "✓" : "+"}</span>
+                                {a.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 );
@@ -290,31 +546,90 @@ export default function PropertyForm() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">Amenities</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {AMENITIES.map((a) => (
-                <button
-                  key={a.name}
-                  type="button"
-                  onClick={() => toggleAmenity(a.name)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
-                    form.amenities.includes(a.name)
-                      ? "border-teal-500 bg-teal-50 text-teal-700"
-                      : "border-gray-200 text-gray-600 hover:border-gray-300"
-                  }`}
-                >
-                  <span className="text-base">{form.amenities.includes(a.name) ? "✓" : "+"}</span>
-                  {a.name}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       )}
 
-      {/* Step 3: Photos */}
+      {/* ─── Step 3: Room Rates ───────────────────────────────────────────────── */}
       {step === 3 && (
+        <div className="space-y-6">
+          <p className="text-sm text-gray-500">
+            Set nightly rates for each room type. Guests will be able to see these prices and make offers.
+          </p>
+
+          {roomTypes.map((rt) => (
+            <div key={rt._id} className="border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <div className="w-7 h-7 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 text-xs font-bold">
+                  {rt.roomCount}
+                </div>
+                <span className="text-sm font-semibold text-gray-900">{rt.displayLabel}</span>
+                <span className="text-xs text-gray-400">
+                  × {rt.roomCount} room{rt.roomCount !== 1 ? "s" : ""} · max {rt.maxGuests} guests
+                </span>
+              </div>
+              <div className="px-4 py-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Room Only — required */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Room Only <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                      <input
+                        type="number" min={1}
+                        value={rt.pricePerNight}
+                        onChange={(e) => updateRoomType(rt._id, "pricePerNight", parseFloat(e.target.value) || 0)}
+                        className="w-full pl-7 pr-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                      />
+                    </div>
+                    {lkrRate && rt.pricePerNight > 0 && (
+                      <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(rt.pricePerNight * lkrRate).toLocaleString()}/night</p>
+                    )}
+                    {rt.pricePerNight > 0 && (
+                      <p className="text-xs text-teal-600 mt-0.5">Min offer: ${Math.round(rt.pricePerNight * 0.8)}/night</p>
+                    )}
+                  </div>
+
+                  {/* Meal plan rates */}
+                  {[
+                    { label: "Bed & Breakfast", field: "priceBnB" as const },
+                    { label: "Half Board", field: "priceHalfBoard" as const },
+                    { label: "Full Board", field: "priceFullBoard" as const },
+                  ].map(({ label, field }) => {
+                    const val = rt[field] as string | number;
+                    const numVal = typeof val === "number" ? val : parseFloat(val as string);
+                    return (
+                      <div key={field}>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          {label} <span className="text-gray-400 font-normal">(optional)</span>
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                          <input
+                            type="number" min={1} placeholder="—"
+                            value={val === "" ? "" : val}
+                            onChange={(e) =>
+                              updateRoomType(rt._id, field, e.target.value === "" ? "" : parseFloat(e.target.value))
+                            }
+                            className="w-full pl-7 pr-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                          />
+                        </div>
+                        {lkrRate && !isNaN(numVal) && numVal > 0 && (
+                          <p className="text-xs text-gray-400 mt-1">≈ LKR {Math.round(numVal * lkrRate).toLocaleString()}/night</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ─── Step 4: Photos ───────────────────────────────────────────────────── */}
+      {step === 4 && (
         <div className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -376,11 +691,20 @@ export default function PropertyForm() {
           >
             Back
           </button>
-        ) : <div />}
+        ) : (
+          <div />
+        )}
 
-        {step < 3 ? (
+        {step < 4 ? (
           <button
-            onClick={() => setStep((s) => s + 1)}
+            onClick={() => {
+              if (step === 2 && roomTypes.length === 0) {
+                setError("Please add at least one room type");
+                return;
+              }
+              setError("");
+              setStep((s) => s + 1);
+            }}
             className="px-8 py-3 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition-colors"
           >
             Continue

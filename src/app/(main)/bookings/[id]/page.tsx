@@ -8,7 +8,7 @@ import StarRating from "@/components/shared/StarRating";
 import { formatDateRange, formatCurrency, getInitials } from "@/lib/utils";
 import { ratingToStars } from "@/lib/ratingQuestions";
 import Link from "next/link";
-import { MapPin, Calendar, Users, ArrowLeft, Navigation, Car, Star, UtensilsCrossed } from "lucide-react";
+import { MapPin, Calendar, Users, ArrowLeft, Navigation, Car, Star, UtensilsCrossed, Phone } from "lucide-react";
 import { MEAL_PLANS } from "@/lib/constants";
 
 interface Props {
@@ -23,10 +23,10 @@ export default async function BookingDetailPage({ params }: Props) {
   const booking = await prisma.booking.findUnique({
     where: { id },
     include: {
-      guest: { select: { id: true, name: true, image: true, email: true } },
+      guest: { select: { id: true, name: true, image: true, email: true, phone: true } },
       property: {
         include: {
-          host: { select: { id: true, name: true, image: true } },
+          host: { select: { id: true, name: true, image: true, phone: true } },
           images: { where: { isPrimary: true }, take: 1 },
         },
       },
@@ -42,14 +42,18 @@ export default async function BookingDetailPage({ params }: Props) {
 
   // Enrich with raw columns (stale Prisma client doesn't know them)
   const transportRow = await prisma.$queryRaw<
-    { pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null; category: string; mealPlan: string }[]
+    { pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null; category: string; mealPlan: string; roomSelections: string | null }[]
   >`
-    SELECT b.pickupPoint, b.dropPoint, b.distanceKm, b.mealPlan, p.category
+    SELECT b.pickupPoint, b.dropPoint, b.distanceKm, b.mealPlan, b.roomSelections, p.category
     FROM "Booking" b
     JOIN "Property" p ON p.id = b.propertyId
     WHERE b.id = ${id}
   `;
-  const transportInfo = transportRow[0] ?? { pickupPoint: null, dropPoint: null, distanceKm: null, category: "STAY", mealPlan: "ROOM_ONLY" };
+  const transportInfo = transportRow[0] ?? { pickupPoint: null, dropPoint: null, distanceKm: null, category: "STAY", mealPlan: "ROOM_ONLY", roomSelections: null };
+  type RoomSelection = { typeId: string; typeName: string; displayLabel: string; count: number };
+  const roomSelections: RoomSelection[] | null = transportInfo.roomSelections
+    ? (() => { try { return JSON.parse(transportInfo.roomSelections); } catch { return null; } })()
+    : null;
   const isTransportBooking = transportInfo.category === "TRANSPORT";
 
   const isGuest = booking.guestId === session.user.id;
@@ -175,25 +179,26 @@ export default async function BookingDetailPage({ params }: Props) {
                 <div className="flex items-center gap-2 text-gray-600">
                   <Users className="w-4 h-4 text-teal-500" />
                   <div>
-                    <p className="text-xs text-gray-400 mb-0.5">Guests & Nights</p>
+                    <p className="text-xs text-gray-400 mb-0.5">Guests · Nights</p>
                     <p>{booking.guests} guests · {booking.nights} nights</p>
                   </div>
                 </div>
-                {transportInfo.mealPlan && transportInfo.mealPlan !== "ROOM_ONLY" && (
-                  <div className="flex items-center gap-2 text-gray-600 col-span-2">
-                    <UtensilsCrossed className="w-4 h-4 text-teal-500" />
-                    <div>
-                      <p className="text-xs text-gray-400 mb-0.5">Meal Plan</p>
-                      <p>{MEAL_PLANS.find((m) => m.value === transportInfo.mealPlan)?.label ?? transportInfo.mealPlan}</p>
-                    </div>
+                <div className="flex items-center gap-2 text-gray-600 col-span-2">
+                  <UtensilsCrossed className="w-4 h-4 text-teal-500" />
+                  <div>
+                    <p className="text-xs text-gray-400 mb-0.5">Meal Plan</p>
+                    <p>{MEAL_PLANS.find((m) => m.value === transportInfo.mealPlan)?.label ?? "Room Only"}</p>
                   </div>
-                )}
-                {transportInfo.mealPlan === "ROOM_ONLY" && (
-                  <div className="flex items-center gap-2 text-gray-600 col-span-2">
-                    <UtensilsCrossed className="w-4 h-4 text-teal-500" />
-                    <div>
-                      <p className="text-xs text-gray-400 mb-0.5">Meal Plan</p>
-                      <p>Room Only</p>
+                </div>
+                {roomSelections && roomSelections.length > 0 && (
+                  <div className="col-span-2">
+                    <p className="text-xs text-gray-400 mb-1.5">Room Selection</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {roomSelections.map((rs) => (
+                        <span key={rs.typeId} className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-50 text-teal-700 border border-teal-200 rounded-full text-xs font-medium">
+                          <span className="font-bold">{rs.count}×</span> {rs.displayLabel}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -214,7 +219,79 @@ export default async function BookingDetailPage({ params }: Props) {
               </div>
             )}
 
-            {isGuest && (
+            {/* ── Contact info revealed after acceptance ── */}
+            {["ACCEPTED", "COMPLETED"].includes(booking.status) && (
+              <>
+                {/* Host sees guest phone */}
+                {isHost && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">Guest Contact</p>
+                    <div className="flex items-center gap-2">
+                      {booking.guest.image ? (
+                        <img src={booking.guest.image} alt="" className="w-9 h-9 rounded-full" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-sm font-semibold">
+                          {getInitials(booking.guest.name)}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{booking.guest.name}</p>
+                        <p className="text-xs text-gray-500">{booking.guest.email}</p>
+                        {(booking.guest as { phone?: string | null }).phone && (
+                          <a href={`tel:${(booking.guest as { phone?: string | null }).phone}`}
+                            className="flex items-center gap-1 text-xs text-blue-600 font-medium mt-0.5 hover:underline">
+                            <Phone className="w-3 h-3" />
+                            {(booking.guest as { phone?: string | null }).phone}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Guest sees property location map + host phone */}
+                {isGuest && (
+                  <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-semibold text-teal-700 uppercase tracking-wide">Property Location & Host Contact</p>
+                    {/* Map */}
+                    <div className="rounded-lg overflow-hidden border border-teal-200">
+                      <iframe
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${property.longitude - 0.03},${property.latitude - 0.03},${property.longitude + 0.03},${property.latitude + 0.03}&layer=mapnik&marker=${property.latitude},${property.longitude}`}
+                        className="w-full h-44"
+                        loading="lazy"
+                        title="Property location"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-teal-700">
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>{property.address}, {property.district}</span>
+                    </div>
+                    {/* Host contact */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-teal-200">
+                      {property.host.image ? (
+                        <img src={property.host.image} alt="" className="w-8 h-8 rounded-full" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 text-xs font-semibold">
+                          {getInitials(property.host.name)}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-xs font-medium text-gray-800">{property.host.name}</p>
+                        {(property.host as { phone?: string | null }).phone && (
+                          <a href={`tel:${(property.host as { phone?: string | null }).phone}`}
+                            className="flex items-center gap-1 text-xs text-teal-600 font-medium hover:underline">
+                            <Phone className="w-3 h-3" />
+                            {(property.host as { phone?: string | null }).phone}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {isGuest && !["ACCEPTED", "COMPLETED"].includes(booking.status) && (
               <div className="flex items-center gap-2">
                 {booking.guest.image ? (
                   <img src={booking.guest.image} alt="" className="w-8 h-8 rounded-full" />
