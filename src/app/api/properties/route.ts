@@ -119,7 +119,13 @@ export async function GET(req: NextRequest) {
     data = data.slice((page - 1) * limit, page * limit);
   }
 
-  return NextResponse.json({ data, total, page, totalPages: Math.ceil(total / limit) });
+  const safePayload = JSON.parse(
+    JSON.stringify(
+      { data, total, page, totalPages: Math.ceil(total / limit) },
+      (_k, v) => (typeof v === "bigint" ? Number(v) : v)
+    )
+  );
+  return NextResponse.json(safePayload);
 }
 
 export async function POST(req: NextRequest) {

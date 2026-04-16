@@ -34,19 +34,36 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       : null;
 
   // PropertyRating: average of all avgScore values (includes seeded)
-  const prRows = await prisma.$queryRawUnsafe<{ avgScore: number; isSeeded: number }[]>(
-    `SELECT avgScore, isSeeded FROM "PropertyRating" WHERE propertyId = ?`,
+  const prRows = await prisma.$queryRawUnsafe<{ avgScore: number }[]>(
+    `SELECT avgScore FROM "PropertyRating" WHERE propertyId = ?`,
     id
   );
   const propertyRating =
     prRows.length > 0
-      ? parseFloat((prRows.reduce((s, r) => s + r.avgScore, 0) / prRows.length).toFixed(1))
+      ? parseFloat((prRows.reduce((s, r) => s + Number(r.avgScore), 0) / prRows.length).toFixed(1))
       : null;
   const propertyRatingCount = prRows.length;
 
-  // Seeded feedback rows (isSeeded=1) — displayed as default reviews
-  const seededFeedback = await prisma.$queryRawUnsafe<{ avgScore: number; createdAt: string; comment: string | null }[]>(
-    `SELECT avgScore, createdAt, comment FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1 ORDER BY createdAt DESC`,
+  // Seeded feedback rows (isSeeded=1) — default reviews shown first
+  const seededFeedback = await prisma.$queryRawUnsafe<{
+    avgScore: number; createdAt: string; comment: string | null;
+  }[]>(
+    `SELECT avgScore, createdAt, comment
+     FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1
+     ORDER BY createdAt DESC`,
+    id
+  );
+
+  // Real guest reviews (isSeeded=0) — appended after seeded, newest first
+  const guestFeedback = await prisma.$queryRawUnsafe<{
+    avgScore: number; createdAt: string; comment: string | null;
+    guestName: string | null; guestImage: string | null;
+  }[]>(
+    `SELECT pr.avgScore, pr.createdAt, pr.comment, u.name as guestName, u.image as guestImage
+     FROM "PropertyRating" pr
+     LEFT JOIN "User" u ON u.id = pr.guestId
+     WHERE pr.propertyId = ? AND pr.isSeeded = 0
+     ORDER BY pr.createdAt DESC`,
     id
   );
 
@@ -67,12 +84,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     amenities: (() => { try { return JSON.parse(rt.amenities); } catch { return []; } })(),
   }));
 
-  return NextResponse.json({
-    ...property, category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard,
-    vehicleGroups, avgRating, reviewCount: property.reviews.length, propertyRating, propertyRatingCount,
-    roomTypes: roomTypes.length > 0 ? roomTypes : null,
-    seededFeedback,
-  });
+  // BigInt-safe serialisation (SQLite raw queries can return BigInt for integer columns)
+  const payload = JSON.parse(
+    JSON.stringify(
+      {
+        ...property, category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard,
+        vehicleGroups, avgRating, reviewCount: property.reviews.length, propertyRating, propertyRatingCount,
+        roomTypes: roomTypes.length > 0 ? roomTypes : null,
+        seededFeedback,
+        guestFeedback,
+      },
+      (_key, value) => (typeof value === "bigint" ? Number(value) : value)
+    )
+  );
+
+  return NextResponse.json(payload);
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
