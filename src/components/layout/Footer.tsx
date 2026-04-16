@@ -9,7 +9,7 @@ export default function Footer() {
           <div className="col-span-1">
             <Link href="/" className="flex items-center gap-2 text-white font-bold text-xl mb-3">
               <MapPin className="w-5 h-5 text-teal-400" />
-              Ahangama
+              Visit Sri Lanka
             </Link>
             <p className="text-sm leading-relaxed">
               Discover Sri Lanka's most unique stays through flexible, negotiated pricing.
@@ -46,7 +46,7 @@ export default function Footer() {
         </div>
 
         <div className="mt-10 border-t border-gray-800 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs">
-          <p>© {new Date().getFullYear()} Ahangama. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Visit Sri Lanka. All rights reserved.</p>
           <p className="text-teal-400">Made with ♥ for Sri Lanka tourism</p>
         </div>
       </div>

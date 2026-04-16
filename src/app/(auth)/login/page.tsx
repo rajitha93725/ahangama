@@ -9,7 +9,7 @@ export default async function LoginPage({ searchParams }: Props) {
   return (
     <>
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome back</h1>
-      <p className="text-gray-500 text-sm mb-6">Sign in to your Ahangama account</p>
+      <p className="text-gray-500 text-sm mb-6">Sign in to your Visit Sri Lanka account</p>
       <LoginForm callbackUrl={callbackUrl || "/"} />
     </>
   );

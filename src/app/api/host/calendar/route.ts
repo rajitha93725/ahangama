@@ -211,7 +211,7 @@ export async function GET(req: NextRequest) {
       const effectiveIntBooking = intBooking ?? (isAhangamaOverflow ? {
         id: extBooking!.id,
         roomId: extBooking!.roomId,
-        guestName: extBooking!.guestName ?? "Ahangama booking",
+        guestName: extBooking!.guestName ?? "Visit Sri Lanka booking",
         checkIn: extBooking!.checkIn,
         checkOut: extBooking!.checkOut,
         status: "ACCEPTED",

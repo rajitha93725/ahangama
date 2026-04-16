@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="p-5 border-b border-gray-800">
           <Link href="/" className="flex items-center gap-2 text-white font-bold">
             <MapPin className="w-5 h-5 text-teal-400" />
-            Ahangama
+            Visit Sri Lanka
           </Link>
           <p className="text-xs text-gray-500 mt-1">Admin Panel</p>
         </div>

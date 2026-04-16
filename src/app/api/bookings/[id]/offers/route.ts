@@ -76,7 +76,7 @@ async function autoAssignRoom(
       bookingId
     );
     const requested = Number(bookingRow[0]?.roomsRequested ?? 1);
-    const guestName = bookingRow[0]?.guestName ?? "Ahangama booking";
+    const guestName = bookingRow[0]?.guestName ?? "Visit Sri Lanka booking";
     const roomSelectionsJson = bookingRow[0]?.roomSelections;
     const roomSelections: Array<{ typeId: string; count: number }> | null =
       roomSelectionsJson ? (() => { try { return JSON.parse(roomSelectionsJson); } catch { return null; } })() : null;

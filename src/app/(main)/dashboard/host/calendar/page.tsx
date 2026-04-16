@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import BookingCalendarClient from "./BookingCalendarClient";
 
-export const metadata = { title: "Booking Calendar — Ahangama" };
+export const metadata = { title: "Booking Calendar — Visit Sri Lanka" };
 
 export default async function BookingCalendarPage() {
   const session = await auth();

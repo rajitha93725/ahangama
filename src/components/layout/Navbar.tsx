@@ -19,7 +19,7 @@ export default function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 font-bold text-xl text-teal-600">
             <MapPin className="w-6 h-6" />
-            <span>Ahangama</span>
+            <span>Visit Sri Lanka</span>
           </Link>
 
           {/* Desktop Nav */}

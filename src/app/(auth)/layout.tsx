@@ -8,7 +8,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 text-2xl font-bold text-teal-600">
             <MapPin className="w-7 h-7" />
-            Ahangama
+            Visit Sri Lanka
           </Link>
           <p className="text-gray-500 text-sm mt-2">Sri Lanka Tourism Marketplace</p>
         </div>

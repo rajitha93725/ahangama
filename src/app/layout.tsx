@@ -9,7 +9,7 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Ahangama — Sri Lanka Tourism Marketplace",
+  title: "Visit Sri Lanka — Tourism Marketplace",
   description: "Discover and book unique accommodations across Sri Lanka with flexible pricing",
 };
 

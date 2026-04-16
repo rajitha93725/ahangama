@@ -40,9 +40,11 @@ export default function PropertyCard({
 
   return (
     <Link href={`/properties/${id}`} className="group/card block">
-      <div className="rounded-2xl overflow-hidden bg-white border border-gray-100 hover:shadow-lg transition-shadow duration-200">
-        {/* Image */}
-        <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-teal-50 to-teal-100">
+      {/* Outer wrapper: no overflow-hidden so the tooltip can escape upward */}
+      <div className="rounded-2xl border border-gray-100 hover:shadow-lg transition-shadow duration-200 bg-white">
+
+        {/* Image — own overflow-hidden + rounded top keeps zoom effect & corner clipping */}
+        <div className="relative aspect-[4/3] overflow-hidden rounded-t-2xl bg-gradient-to-br from-teal-50 to-teal-100">
           {rawImg && !imgError ? (
             <img
               src={rawImg}
@@ -67,52 +69,62 @@ export default function PropertyCard({
 
         {/* Content */}
         <div className="p-4">
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className="font-semibold text-gray-900 text-sm line-clamp-1 flex-1">{title}</h3>
-            {displayRating !== null && (() => {
-              const count = propertyRating != null ? (propertyRatingCount ?? reviewCount) : reviewCount;
-              return (
-                <div className="relative group/rating flex items-center gap-1 flex-shrink-0 cursor-default">
-                  {/* Hover tooltip */}
-                  <div className="pointer-events-none absolute bottom-full right-0 mb-1.5 z-20 opacity-0 group-hover/rating:opacity-100 transition-opacity duration-150">
-                    <div className="bg-gray-900 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
-                      {title} has {count} Review{count !== 1 ? "s" : ""}
-                    </div>
-                    <div className="absolute top-full right-3 border-4 border-transparent border-t-gray-900" />
+
+          {/* Title — full width, wraps up to 2 lines */}
+          <h3 className="font-semibold text-gray-900 text-sm line-clamp-2 leading-snug mb-1">{title}</h3>
+
+          {/* Rating row — sits below title, no longer competing for same-line space */}
+          {displayRating !== null && (() => {
+            const count = propertyRating != null ? (propertyRatingCount ?? reviewCount) : reviewCount;
+            return (
+              <div className="relative group/rating inline-flex items-center gap-1 cursor-default mb-1.5">
+                {/* Hover tooltip */}
+                <div className="pointer-events-none absolute bottom-full left-0 mb-2 z-50 opacity-0 group-hover/rating:opacity-100 transition-opacity duration-150">
+                  <div className="bg-gray-900 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+                    {title} has {count} Review{count !== 1 ? "s" : ""}
                   </div>
-                  {starCount !== null && Array.from({ length: 5 }, (_, i) => {
-                    const full = starCount >= i + 1;
-                    const half = !full && starCount >= i + 0.5;
-                    return (
-                      <span key={i} className="relative inline-flex">
-                        <Star className="w-3 h-3 fill-gray-200 text-gray-200" />
-                        {(full || half) && (
-                          <span className={`absolute inset-0 overflow-hidden ${half ? "w-1/2" : "w-full"}`}>
-                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                          </span>
-                        )}
-                      </span>
-                    );
-                  })}
-                  <span className="text-xs font-medium text-gray-700 ml-0.5">
-                    {propertyRating != null ? propertyRating.toFixed(1) : (avgRating?.toFixed(1) ?? "")}
-                  </span>
-                  <span className="text-xs text-gray-400">({count})</span>
+                  <div className="absolute top-full left-3 border-4 border-transparent border-t-gray-900" />
                 </div>
-              );
-            })()}
-          </div>
+                {starCount !== null && Array.from({ length: 5 }, (_, i) => {
+                  const full = starCount >= i + 1;
+                  const half = !full && starCount >= i + 0.5;
+                  return (
+                    <span key={i} className="relative inline-flex">
+                      <Star className="w-3 h-3 fill-gray-200 text-gray-200" />
+                      {(full || half) && (
+                        <span className={`absolute inset-0 overflow-hidden ${half ? "w-1/2" : "w-full"}`}>
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+                <span className="text-xs font-medium text-gray-700 ml-0.5">
+                  {propertyRating != null ? propertyRating.toFixed(1) : (avgRating?.toFixed(1) ?? "")}
+                </span>
+                <span className="text-xs text-gray-400">({count})</span>
+              </div>
+            );
+          })()}
 
+          {/* Location */}
           <div className="flex items-center gap-1 text-gray-500 text-xs mb-2">
-            <MapPin className="w-3 h-3" />
-            <span>{district}, Sri Lanka</span>
+            <MapPin className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">{district}, Sri Lanka</span>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+          {/* Stats */}
+          <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
             <span className="flex items-center gap-1"><Users className="w-3 h-3" />{maxGuests} {isTransport ? "passengers" : "guests"}</span>
             {!isTransport && <span className="flex items-center gap-1"><BedDouble className="w-3 h-3" />{bedrooms} bed{bedrooms !== 1 ? "s" : ""}</span>}
           </div>
 
+          {/* Host name */}
+          {host.name && (
+            <p className="text-xs text-gray-400 truncate mb-2">Hosted by {host.name}</p>
+          )}
+
+          {/* Price + Negotiable */}
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
               {isTransport ? (

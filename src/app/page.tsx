@@ -151,7 +151,7 @@ export default async function HomePage() {
         {/* How it Works */}
         <section className="bg-gray-50 py-16">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">How Ahangama Works</h2>
+            <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">How Visit Sri Lanka Works</h2>
             <p className="text-gray-500 text-center mb-12">Flexible booking through direct negotiation</p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {[
