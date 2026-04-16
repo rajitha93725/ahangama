@@ -15,6 +15,7 @@ interface Property {
   avgRating: number | null;
   reviewCount: number;
   propertyRating?: number | null;
+  propertyRatingCount?: number | null;
   images: { url: string; alt?: string | null }[];
   host: { name?: string | null; image?: string | null };
 }

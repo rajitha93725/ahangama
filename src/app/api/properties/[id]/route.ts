@@ -33,16 +33,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       ? property.reviews.reduce((sum, r) => sum + r.rating, 0) / property.reviews.length
       : null;
 
-  // PropertyRating: average of all avgScore values (includes seeded 10.0)
-  const prRows = await prisma.$queryRawUnsafe<{ avgScore: number }[]>(
-    `SELECT avgScore FROM "PropertyRating" WHERE propertyId = ?`,
+  // PropertyRating: average of all avgScore values (includes seeded)
+  const prRows = await prisma.$queryRawUnsafe<{ avgScore: number; isSeeded: number }[]>(
+    `SELECT avgScore, isSeeded FROM "PropertyRating" WHERE propertyId = ?`,
     id
   );
   const propertyRating =
     prRows.length > 0
       ? parseFloat((prRows.reduce((s, r) => s + r.avgScore, 0) / prRows.length).toFixed(1))
       : null;
-  const propertyRatingCount = prRows.filter((r) => !("isSeeded" in r)).length || prRows.length;
+  const propertyRatingCount = prRows.length;
+
+  // Seeded feedback rows (isSeeded=1) — displayed as default reviews
+  const seededFeedback = await prisma.$queryRawUnsafe<{ avgScore: number; createdAt: string }[]>(
+    `SELECT avgScore, createdAt FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1 ORDER BY createdAt DESC`,
+    id
+  );
 
   // Fetch room types for this property
   const roomTypeRows = await prisma.$queryRawUnsafe<{
@@ -65,6 +71,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     ...property, category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard,
     vehicleGroups, avgRating, reviewCount: property.reviews.length, propertyRating, propertyRatingCount,
     roomTypes: roomTypes.length > 0 ? roomTypes : null,
+    seededFeedback,
   });
 }
 

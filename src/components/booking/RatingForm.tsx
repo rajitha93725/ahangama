@@ -18,7 +18,8 @@ export default function RatingForm({ propertyId, bookingId, isTransport = false 
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
-  const avgScore = parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1));
+  // 5 questions × 2 pts each = 10 total max; avg = sum / 5
+  const avgScore = parseFloat((scores.reduce((a, b) => a + b, 0) / 5).toFixed(1));
 
   // Colour band for a score 1–10
   const scoreColor = (v: number) =>

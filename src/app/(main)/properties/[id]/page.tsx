@@ -255,7 +255,7 @@ export default async function PropertyDetailPage({ params }: Props) {
             <p className="text-xs text-gray-400 mt-1">Exact address shared after booking confirmation</p>
           </div>
 
-          {/* Reviews */}
+          {/* Guest Reviews (real) */}
           {property.reviews.length > 0 && (
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -285,6 +285,40 @@ export default async function PropertyDetailPage({ params }: Props) {
                     </div>
                     <StarRating value={r.rating} readonly size="sm" />
                     <p className="text-sm text-gray-600 mt-2 leading-relaxed">{r.comment}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Seeded / Default Ratings */}
+          {property.seededFeedback?.length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                Featured Ratings
+                {property.propertyRating != null && (
+                  <span className="ml-2 text-sm font-normal text-gray-500">
+                    · {property.propertyRating.toFixed(1)} / 10
+                    <span className="text-gray-400 ml-1">({property.propertyRatingCount ?? property.seededFeedback.length})</span>
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-gray-400 mb-4">Based on verified guest experiences</p>
+              <div className="space-y-3">
+                {(property.seededFeedback as { avgScore: number; createdAt: string }[]).map((fb, i) => (
+                  <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                    <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-700 text-xs font-bold flex-shrink-0">
+                      {i + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-700">Verified Guest</p>
+                      <p className="text-xs text-gray-400">{formatDate(fb.createdAt)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <StarRating value={ratingToStars(fb.avgScore)} readonly size="sm" />
+                      <span className="text-xs font-semibold text-gray-700">{fb.avgScore.toFixed(1)}</span>
+                      <span className="text-xs text-gray-400">/ 10</span>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -40,6 +40,19 @@ export default async function BookingDetailPage({ params }: Props) {
 
   if (!booking) notFound();
 
+  // Auto-complete: if ACCEPTED and checkout was before 12:01 AM today, mark COMPLETED
+  if (booking.status === "ACCEPTED") {
+    const checkOut = new Date(booking.checkOut);
+    const completionTime = new Date(checkOut);
+    completionTime.setDate(completionTime.getDate() + 1);
+    completionTime.setHours(0, 1, 0, 0);
+    if (completionTime <= new Date()) {
+      await prisma.booking.update({ where: { id }, data: { status: "COMPLETED" } });
+      // @ts-expect-error mutate for display
+      booking.status = "COMPLETED";
+    }
+  }
+
   // Enrich with raw columns (stale Prisma client doesn't know them)
   const transportRow = await prisma.$queryRaw<
     { pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null; category: string; mealPlan: string; roomSelections: string | null }[]
@@ -70,8 +83,8 @@ export default async function BookingDetailPage({ params }: Props) {
       ? ratingRows.reduce((s, r) => s + r.avgScore, 0) / ratingRows.length
       : null;
 
-  // Check if this guest has already rated this booking
-  const canRate = isGuest && (booking.status === "ACCEPTED" || booking.status === "COMPLETED");
+  // Check if this guest has already rated this booking — only allowed once COMPLETED
+  const canRate = isGuest && booking.status === "COMPLETED";
   const hasRated = canRate
     ? (await prisma.$queryRawUnsafe<{ id: string }[]>(
         `SELECT id FROM "PropertyRating" WHERE bookingId = ? LIMIT 1`,

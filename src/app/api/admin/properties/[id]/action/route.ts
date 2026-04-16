@@ -33,7 +33,7 @@ export async function POST(
     select: { id: true, title: true, status: true, hostId: true },
   });
 
-  // On first approval, seed 10 default perfect ratings (simulates 10 happy reviewers)
+  // On first approval, seed 10 default perfect ratings (5 questions × 2 pts = 10 each)
   if (action === "approve") {
     const existingCount = await prisma.$queryRawUnsafe<{ cnt: number }[]>(
       `SELECT COUNT(*) as cnt FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1`,
@@ -43,11 +43,11 @@ export async function POST(
     if (seededCount < 10) {
       const now = new Date();
       for (let i = seededCount; i < 10; i++) {
-        // Stagger createdAt by one day each so they look like separate reviewers
         const ts = new Date(now.getTime() - i * 86400000).toISOString();
+        // q1-q5 = 10 (perfect), q6-q10 = 0 (unused), avgScore = 10
         await prisma.$queryRawUnsafe(
           `INSERT INTO "PropertyRating" (id, propertyId, bookingId, guestId, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, avgScore, isSeeded, createdAt)
-           VALUES (?, ?, NULL, NULL, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 1, ?)`,
+           VALUES (?, ?, NULL, NULL, 10, 10, 10, 10, 10, 0, 0, 0, 0, 0, 10, 1, ?)`,
           randomUUID(), id, ts
         );
       }

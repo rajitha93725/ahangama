@@ -20,13 +20,14 @@ interface PropertyCardProps {
   avgRating: number | null;
   reviewCount: number;
   propertyRating?: number | null;
+  propertyRatingCount?: number | null;
   images: { url: string; alt?: string | null }[];
   host: { name?: string | null; image?: string | null };
 }
 
 export default function PropertyCard({
   id, title, district, propertyType, category, pricePerNight, pricePerKm,
-  maxGuests, bedrooms, avgRating, reviewCount, propertyRating, images, host,
+  maxGuests, bedrooms, avgRating, reviewCount, propertyRating, propertyRatingCount, images, host,
 }: PropertyCardProps) {
   const [imgError, setImgError] = useState(false);
   const rawImg = images[0]?.url;
@@ -70,17 +71,26 @@ export default function PropertyCard({
             <h3 className="font-semibold text-gray-900 text-sm line-clamp-1 flex-1">{title}</h3>
             {displayRating !== null && (
               <div className="flex items-center gap-1 flex-shrink-0">
-                {/* Show filled stars derived from 10-point score */}
-                {starCount !== null && Array.from({ length: 5 }, (_, i) => (
-                  <Star
-                    key={i}
-                    className={`w-3 h-3 ${i < starCount ? "fill-amber-400 text-amber-400" : "fill-gray-200 text-gray-200"}`}
-                  />
-                ))}
+                {starCount !== null && Array.from({ length: 5 }, (_, i) => {
+                  const full = starCount >= i + 1;
+                  const half = !full && starCount >= i + 0.5;
+                  return (
+                    <span key={i} className="relative inline-flex">
+                      <Star className="w-3 h-3 fill-gray-200 text-gray-200" />
+                      {(full || half) && (
+                        <span className={`absolute inset-0 overflow-hidden ${half ? "w-1/2" : "w-full"}`}>
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
                 <span className="text-xs font-medium text-gray-700 ml-0.5">
                   {propertyRating != null ? propertyRating.toFixed(1) : (avgRating?.toFixed(1) ?? "")}
                 </span>
-                {propertyRating == null && <span className="text-xs text-gray-400">({reviewCount})</span>}
+                <span className="text-xs text-gray-400">
+                  ({propertyRating != null ? (propertyRatingCount ?? reviewCount) : reviewCount})
+                </span>
               </div>
             )}
           </div>

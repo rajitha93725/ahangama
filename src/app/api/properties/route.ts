@@ -79,24 +79,26 @@ export async function GET(req: NextRequest) {
   const extraMap: Record<string, { category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }> = {};
   for (const r of extraRows) extraMap[r.id] = { category: r.category, pricePerKm: r.pricePerKm, mealPlan: r.mealPlan ?? "ROOM_ONLY", priceBnB: r.priceBnB ?? null, priceHalfBoard: r.priceHalfBoard ?? null, priceFullBoard: r.priceFullBoard ?? null };
 
-  // Fetch PropertyRating averages for all returned properties
-  const pratingRows: { propertyId: string; avgScore: number }[] =
+  // Fetch PropertyRating averages + counts for all returned properties
+  const pratingRows: { propertyId: string; avgScore: number; isSeeded: number }[] =
     propertyIds.length > 0
       ? await prisma.$queryRawUnsafe(
-          `SELECT propertyId, avgScore FROM "PropertyRating" WHERE propertyId IN (${propertyIds.map(() => "?").join(",")})`,
+          `SELECT propertyId, avgScore, isSeeded FROM "PropertyRating" WHERE propertyId IN (${propertyIds.map(() => "?").join(",")})`,
           ...propertyIds
         )
       : [];
-  const pratingMap: Record<string, number[]> = {};
+  const pratingMap: Record<string, { scores: number[]; total: number; real: number }> = {};
   for (const row of pratingRows) {
-    if (!pratingMap[row.propertyId]) pratingMap[row.propertyId] = [];
-    pratingMap[row.propertyId].push(row.avgScore);
+    if (!pratingMap[row.propertyId]) pratingMap[row.propertyId] = { scores: [], total: 0, real: 0 };
+    pratingMap[row.propertyId].scores.push(row.avgScore);
+    pratingMap[row.propertyId].total++;
+    if (!row.isSeeded) pratingMap[row.propertyId].real++;
   }
 
   let data = properties.map((p) => {
-    const scores = pratingMap[p.id];
-    const propertyRating = scores?.length
-      ? parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1))
+    const pr = pratingMap[p.id];
+    const propertyRating = pr?.scores.length
+      ? parseFloat((pr.scores.reduce((a, b) => a + b, 0) / pr.scores.length).toFixed(1))
       : null;
     return {
       ...p,
@@ -107,6 +109,7 @@ export async function GET(req: NextRequest) {
           : null,
       reviewCount: p.reviews.length,
       propertyRating,
+      propertyRatingCount: pr?.total ?? 0,
     };
   });
 

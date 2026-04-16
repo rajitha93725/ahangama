@@ -15,14 +15,20 @@ export const TRANSPORT_QUESTIONS = [
 ];
 
 /**
- * Convert a 0–10 avgScore to a 0–5 star count.
- * 9–10 → 5★  7–9 → 4★  4–7 → 3★  2–4 → 2★  0.5–2 → 1★  <0.5 → 0★
+ * Convert a 0–10 avgScore to a 0–5 star rating (supports half stars).
+ * Each question = 2 points, 5 questions = 10 total.
+ *
+ * ≥9   → 5     | ≥8   → 4.5  | ≥6.5 → 4
+ * ≥5.5 → 3.5   | ≥3.5 → 3   | ≥2   → 2
+ * ≥0.5 → 1     | <0.5 → 0.5
  */
 export function ratingToStars(score: number): number {
-  if (score >= 9) return 5;
-  if (score >= 7) return 4;
-  if (score >= 4) return 3;
-  if (score >= 2) return 2;
+  if (score >= 9)   return 5;
+  if (score >= 8)   return 4.5;
+  if (score >= 6.5) return 4;
+  if (score >= 5.5) return 3.5;
+  if (score >= 3.5) return 3;
+  if (score >= 2)   return 2;
   if (score >= 0.5) return 1;
-  return 0;
+  return 0.5;
 }

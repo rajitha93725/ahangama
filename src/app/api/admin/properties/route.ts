@@ -11,6 +11,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const status = searchParams.get("status");
   const search = searchParams.get("search");
+  const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
+  const limit = 10;
 
   const where: Record<string, unknown> = {};
   if (status) where.status = status;
@@ -22,23 +24,26 @@ export async function GET(req: NextRequest) {
     ];
   }
 
-  // `category` is unknown to the stale Prisma client — omit it from select,
-  // then enrich via raw SQL.
-  const properties = await prisma.property.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      district: true,
-      status: true,
-      pricePerNight: true,
-      createdAt: true,
-      host: { select: { name: true, email: true, phone: true } },
-    },
-  });
+  const [total, properties] = await Promise.all([
+    prisma.property.count({ where }),
+    prisma.property.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        id: true,
+        title: true,
+        district: true,
+        status: true,
+        pricePerNight: true,
+        createdAt: true,
+        host: { select: { name: true, email: true, phone: true } },
+      },
+    }),
+  ]);
 
-  if (properties.length === 0) return NextResponse.json([]);
+  if (properties.length === 0) return NextResponse.json({ data: [], total, page, totalPages: Math.ceil(total / limit) });
 
   // Fetch category + pricePerKm for these IDs via raw SQL
   const ids = properties.map((p) => p.id);
@@ -55,5 +60,5 @@ export async function GET(req: NextRequest) {
     pricePerKm: extraMap[p.id]?.pricePerKm ?? null,
   }));
 
-  return NextResponse.json(enriched);
+  return NextResponse.json({ data: enriched, total, page, totalPages: Math.ceil(total / limit) });
 }

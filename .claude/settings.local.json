@@ -25,7 +25,8 @@
       "Bash(xargs cat:*)",
       "Bash(npm test:*)",
       "Bash(sqlite3 \"C:/AutomationDI/TryOuts/ahangama/prisma/dev.db\" \"ALTER TABLE Property ADD COLUMN mealPlan TEXT NOT NULL DEFAULT 'ROOM_ONLY';\")",
-      "Bash(sqlite3 prisma/dev.db)"
+      "Bash(sqlite3 prisma/dev.db)",
+      "Bash(find *)"
     ]
   }
 }
