@@ -7,9 +7,10 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="col-span-1">
-            <Link href="/" className="flex items-center gap-2 text-white font-bold text-xl mb-3">
-              <MapPin className="w-5 h-5 text-teal-400" />
-              Visit Sri Lanka
+            <Link href="/" className="flex items-center gap-2 text-white mb-3">
+              <MapPin className="w-5 h-5 text-teal-400 flex-shrink-0" />
+              <span className="text-2xl text-white" style={{ fontFamily: "var(--font-dancing)" }}>Visit Sri Lanka</span>
+              <img src="https://flagcdn.com/w20/lk.png" alt="Sri Lanka" width={20} height={14} className="rounded-sm flex-shrink-0" />
             </Link>
             <p className="text-sm leading-relaxed">
               Discover Sri Lanka's most unique stays through flexible, negotiated pricing.

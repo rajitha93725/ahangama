@@ -34,19 +34,42 @@ export default async function HomePage() {
       <Navbar />
       <main>
         {/* Hero */}
-        <section className="relative bg-gradient-to-br from-teal-600 via-teal-500 to-emerald-500 text-white overflow-hidden">
+        <section className="relative bg-gradient-to-br from-teal-700 via-teal-500 to-emerald-500 text-white overflow-hidden">
+          {/* Dot grid */}
           <div className="absolute inset-0 opacity-10">
             <div className="absolute inset-0" style={{ backgroundImage: "radial-gradient(circle at 2px 2px, white 1px, transparent 0)", backgroundSize: "40px 40px" }} />
           </div>
-          <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28 text-center">
-            <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full text-sm font-medium mb-6">
-              <MapPin className="w-4 h-4" /> Sri Lanka's #1 Tourism Marketplace
+          {/* Decorative blobs */}
+          <div className="absolute -top-20 -left-20 w-96 h-96 bg-teal-400/20 rounded-full blur-3xl" />
+          <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-emerald-400/20 rounded-full blur-3xl" />
+
+          <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-24 md:pt-20 md:pb-32 text-center">
+
+            {/* Handwritten brand name */}
+            <div className="mb-2 flex items-center justify-center gap-3">
+              <span className="text-5xl md:text-7xl text-white/90 drop-shadow-lg"
+                style={{ fontFamily: "var(--font-dancing)", textShadow: "0 2px 16px rgba(0,0,0,0.18)" }}>
+                Visit Sri Lanka
+              </span>
+              <img
+                src="https://flagcdn.com/w80/lk.png"
+                alt="Sri Lanka"
+                width={64}
+                height={45}
+                className="rounded-md shadow-lg flex-shrink-0"
+              />
             </div>
-            <h1 className="text-4xl md:text-6xl font-bold leading-tight mb-6">
+
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full text-sm font-medium mb-8 mt-2">
+              <MapPin className="w-4 h-4" /> Sri Lanka&apos;s #1 Tourism Marketplace
+            </div>
+
+            <h1 className="text-3xl md:text-5xl font-bold leading-tight mb-6">
               Discover Sri Lanka,<br />
               <span className="text-amber-300">Your Way, Your Price</span>
             </h1>
-            <p className="text-xl text-teal-100 mb-10 max-w-2xl mx-auto">
+            <p className="text-lg text-teal-100 mb-10 max-w-2xl mx-auto">
               Find unique villas, guesthouses, and eco-lodges. Send your own offer and negotiate directly with hosts.
             </p>
 

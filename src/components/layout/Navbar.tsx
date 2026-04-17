@@ -17,9 +17,10 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 font-bold text-xl text-teal-600">
-            <MapPin className="w-6 h-6" />
-            <span>Visit Sri Lanka</span>
+          <Link href="/" className="flex items-center gap-2 text-teal-600">
+            <MapPin className="w-6 h-6 flex-shrink-0" />
+            <span className="text-2xl text-teal-600" style={{ fontFamily: "var(--font-dancing)" }}>Visit Sri Lanka</span>
+            <img src="https://flagcdn.com/w20/lk.png" alt="Sri Lanka" width={20} height={14} className="rounded-sm flex-shrink-0" />
           </Link>
 
           {/* Desktop Nav */}
