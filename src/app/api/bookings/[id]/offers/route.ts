@@ -7,31 +7,11 @@ import { randomUUID } from "crypto";
 // ─── Auto Room Assignment ─────────────────────────────────────────────────────
 // Called when a booking reaches ACCEPTED status.
 // 1. Ensures the property has rooms (provisions Room 1…N from bedrooms count if none exist).
-// 2. Collects free rooms for the stay dates.
+// 2. Single bulk query finds all busy room IDs for the date range.
 // 3. Assigns up to `roomsRequested` free rooms:
 //    - Primary room → set roomId on the Booking row (shows green in calendar).
 //    - Extra rooms  → blocked via ExternalBooking rows so the calendar reflects occupancy.
 // Non-fatal: errors are logged but never block the booking confirmation.
-// Helper: check if a room is free for the given date range
-async function isRoomFree(roomId: string, bookingId: string, checkInIso: string, checkOutIso: string): Promise<boolean> {
-  const extConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM "ExternalBooking"
-     WHERE roomId = ? AND status = 'BOOKED'
-       AND checkIn < ? AND checkOut > ?`,
-    roomId, checkOutIso, checkInIso
-  );
-  if (extConflict.length) return false;
-
-  const intConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM "Booking"
-     WHERE roomId = ? AND id != ? AND status IN ('ACCEPTED', 'COMPLETED')
-       AND checkIn < strftime('%s', ?) * 1000
-       AND checkOut > strftime('%s', ?) * 1000`,
-    roomId, bookingId, checkOutIso, checkInIso
-  );
-  return intConflict.length === 0;
-}
-
 async function autoAssignRoom(
   bookingId: string,
   propertyId: string,
@@ -42,27 +22,31 @@ async function autoAssignRoom(
     const checkInIso = checkIn.toISOString();
     const checkOutIso = checkOut.toISOString();
 
-    // 1. Provision rooms if the property currently has none (old-style, no room types)
-    const countRow = await prisma.$queryRawUnsafe<{ cnt: number }[]>(
-      `SELECT COUNT(*) as cnt FROM "Room" WHERE propertyId = ? AND isActive = 1`,
+    // 1. Provision rooms if the property currently has none (batch INSERT)
+    const countRow = await prisma.$queryRawUnsafe<{ cnt: bigint }[]>(
+      `SELECT COUNT(*) as cnt FROM "Room" WHERE "propertyId" = $1 AND "isActive" = true`,
       propertyId
     );
     const existingCount = Number(countRow[0]?.cnt ?? 0);
 
     if (existingCount === 0) {
-      const prop = await prisma.property.findUnique({ where: { id: propertyId }, select: { bedrooms: true } });
-      const catRow = await prisma.$queryRawUnsafe<{ category: string }[]>(
-        `SELECT category FROM "Property" WHERE id = ?`, propertyId
+      const propRow = await prisma.$queryRawUnsafe<{ bedrooms: number; category: string }[]>(
+        `SELECT bedrooms, category FROM "Property" WHERE id = $1`, propertyId
       );
-      const isStay = catRow[0]?.category !== "TRANSPORT";
-      if (isStay && prop?.bedrooms && prop.bedrooms > 0) {
-        const now = new Date().toISOString();
-        for (let i = 1; i <= prop.bedrooms; i++) {
-          await prisma.$queryRawUnsafe(
-            `INSERT INTO "Room" (id, propertyId, name, maxGuests, isActive, createdAt) VALUES (?, ?, ?, 2, 1, ?)`,
-            randomUUID(), propertyId, `Room ${i}`, now
-          );
+      const isStay = propRow[0]?.category !== "TRANSPORT";
+      const bedroomCount = propRow[0]?.bedrooms ?? 0;
+      if (isStay && bedroomCount > 0) {
+        const bRows: unknown[] = [];
+        const bPlaceholders: string[] = [];
+        let bp = 1;
+        for (let i = 1; i <= bedroomCount; i++) {
+          bRows.push(randomUUID(), propertyId, `Room ${i}`);
+          bPlaceholders.push(`($${bp++}, $${bp++}, $${bp++}, 2, true, NOW())`);
         }
+        await prisma.$queryRawUnsafe(
+          `INSERT INTO "Room" (id, "propertyId", name, "maxGuests", "isActive", "createdAt") VALUES ${bPlaceholders.join(", ")}`,
+          ...bRows
+        );
       }
     }
 
@@ -70,9 +54,9 @@ async function autoAssignRoom(
     const bookingRow = await prisma.$queryRawUnsafe<{
       roomsRequested: number; guestName: string | null; roomSelections: string | null;
     }[]>(
-      `SELECT b.roomsRequested, u.name as guestName, b.roomSelections
-       FROM "Booking" b INNER JOIN "User" u ON u.id = b.guestId
-       WHERE b.id = ?`,
+      `SELECT b."roomsRequested", u.name as "guestName", b."roomSelections"
+       FROM "Booking" b INNER JOIN "User" u ON u.id = b."guestId"
+       WHERE b.id = $1`,
       bookingId
     );
     const requested = Number(bookingRow[0]?.roomsRequested ?? 1);
@@ -81,24 +65,38 @@ async function autoAssignRoom(
     const roomSelections: Array<{ typeId: string; count: number }> | null =
       roomSelectionsJson ? (() => { try { return JSON.parse(roomSelectionsJson); } catch { return null; } })() : null;
 
-    const now = new Date().toISOString();
+    // 3. Load all active rooms + find busy ones with a single UNION query
+    const allRooms = await prisma.$queryRawUnsafe<{ id: string; roomTypeId: string | null }[]>(
+      `SELECT id, "roomTypeId" FROM "Room" WHERE "propertyId" = $1 AND "isActive" = true ORDER BY "createdAt" ASC`,
+      propertyId
+    );
+    if (allRooms.length === 0) return;
 
-    // 3a. TYPED assignment — guest specified room types via roomSelections
+    const allRoomIds = allRooms.map((r) => r.id);
+    const inClause = allRoomIds.map((_, i) => `$${i + 1}`).join(", ");
+    const o = allRoomIds.length; // offset for subsequent params
+    const busyRows = await prisma.$queryRawUnsafe<{ roomId: string }[]>(
+      `SELECT DISTINCT "roomId" FROM "ExternalBooking"
+       WHERE "roomId" IN (${inClause}) AND status = 'BOOKED'
+         AND "checkIn" < $${o + 1}::timestamptz AND "checkOut" > $${o + 2}::timestamptz
+       UNION
+       SELECT DISTINCT "roomId" FROM "Booking"
+       WHERE "roomId" IN (${inClause}) AND id != $${o + 3} AND status IN ('ACCEPTED','COMPLETED')
+         AND "checkIn" < $${o + 1}::timestamptz AND "checkOut" > $${o + 2}::timestamptz`,
+      ...allRoomIds, checkOutIso, checkInIso, bookingId
+    );
+    const busySet = new Set(busyRows.map((r) => r.roomId));
+
+    // 4a. TYPED assignment — guest specified room types via roomSelections
     if (roomSelections && roomSelections.length > 0) {
-      const allRooms = await prisma.$queryRawUnsafe<{ id: string; roomTypeId: string | null }[]>(
-        `SELECT id, roomTypeId FROM "Room" WHERE propertyId = ? AND isActive = 1 ORDER BY ROWID ASC`,
-        propertyId
-      );
-
       let primaryRoomId: string | null = null;
       const extraRoomIds: string[] = [];
 
       for (const sel of roomSelections) {
-        const typeRooms = allRooms.filter((r) => r.roomTypeId === sel.typeId);
+        const typeRooms = allRooms.filter((r) => r.roomTypeId === sel.typeId && !busySet.has(r.id));
         let assigned = 0;
         for (const room of typeRooms) {
           if (assigned >= sel.count) break;
-          if (!(await isRoomFree(room.id, bookingId, checkInIso, checkOutIso))) continue;
           if (!primaryRoomId) {
             primaryRoomId = room.id;
           } else {
@@ -108,40 +106,31 @@ async function autoAssignRoom(
         }
       }
 
-      if (!primaryRoomId) return; // Nothing free
-      await prisma.$executeRaw`UPDATE "Booking" SET roomId = ${primaryRoomId} WHERE id = ${bookingId}`;
+      if (!primaryRoomId) return;
+      await prisma.$executeRaw`UPDATE "Booking" SET "roomId" = ${primaryRoomId} WHERE id = ${bookingId}`;
       for (const roomId of extraRoomIds) {
         await prisma.$queryRawUnsafe(
-          `INSERT INTO "ExternalBooking" (id, propertyId, roomId, checkIn, checkOut, source, guestName, notes, status, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, 'AHANGAMA', ?, ?, 'BOOKED', ?, ?)`,
+          `INSERT INTO "ExternalBooking" (id, "propertyId", "roomId", "checkIn", "checkOut", source, "guestName", notes, status, "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4::timestamp, $5::timestamp, 'AHANGAMA', $6, $7, 'BOOKED', NOW(), NOW())`,
           randomUUID(), propertyId, roomId, checkInIso, checkOutIso,
-          guestName, `Linked to booking ${bookingId} (multi-room)`, now, now
+          guestName, `Linked to booking ${bookingId} (multi-room)`
         );
       }
       return;
     }
 
-    // 3b. UNTYPED fallback — assign first N free rooms (old behaviour)
-    const rooms = await prisma.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "Room" WHERE propertyId = ? AND isActive = 1 ORDER BY ROWID ASC`,
-      propertyId
-    );
-    const freeRooms: string[] = [];
-    for (const room of rooms) {
-      if (await isRoomFree(room.id, bookingId, checkInIso, checkOutIso)) {
-        freeRooms.push(room.id);
-      }
-    }
+    // 4b. UNTYPED fallback — assign first N free rooms
+    const freeRooms = allRooms.filter((r) => !busySet.has(r.id));
     if (freeRooms.length === 0) return;
 
     const toAssign = freeRooms.slice(0, requested);
-    await prisma.$executeRaw`UPDATE "Booking" SET roomId = ${toAssign[0]} WHERE id = ${bookingId}`;
+    await prisma.$executeRaw`UPDATE "Booking" SET "roomId" = ${toAssign[0].id} WHERE id = ${bookingId}`;
     for (let i = 1; i < toAssign.length; i++) {
       await prisma.$queryRawUnsafe(
-        `INSERT INTO "ExternalBooking" (id, propertyId, roomId, checkIn, checkOut, source, guestName, notes, status, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, 'AHANGAMA', ?, ?, 'BOOKED', ?, ?)`,
-        randomUUID(), propertyId, toAssign[i], checkInIso, checkOutIso,
-        guestName, `Linked to booking ${bookingId} (multi-room)`, now, now
+        `INSERT INTO "ExternalBooking" (id, "propertyId", "roomId", "checkIn", "checkOut", source, "guestName", notes, status, "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4::timestamp, $5::timestamp, 'AHANGAMA', $6, $7, 'BOOKED', NOW(), NOW())`,
+        randomUUID(), propertyId, toAssign[i].id, checkInIso, checkOutIso,
+        guestName, `Linked to booking ${bookingId} (multi-room)`
       );
     }
   } catch (err) {

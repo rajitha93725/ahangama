@@ -41,7 +41,7 @@ export default async function AdminDashboard() {
   const propIds = recentPropertiesRaw.map((p) => p.id);
   const categoryRows = propIds.length
     ? await prisma.$queryRawUnsafe<{ id: string; category: string }[]>(
-        `SELECT id, category FROM "Property" WHERE id IN (${propIds.map(() => "?").join(",")})`,
+        `SELECT id, category FROM "Property" WHERE id IN (${propIds.map((_, i) => `$${i + 1}`).join(",")})`,
         ...propIds
       )
     : [];

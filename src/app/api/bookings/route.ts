@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const transportRows = await prisma.$queryRawUnsafe<
       { id: string; pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null }[]
     >(
-      `SELECT id, pickupPoint, dropPoint, distanceKm FROM "Booking" WHERE id IN (${ids.map(() => "?").join(",")})`,
+      `SELECT id, "pickupPoint", "dropPoint", "distanceKm" FROM "Booking" WHERE id IN (${ids.map((_, i) => `$${i + 1}`).join(",")})`,
       ...ids
     );
     const tMap = Object.fromEntries(transportRows.map((r) => [r.id, r]));
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
 
     // For transport: validate required fields
     const catRows = await prisma.$queryRaw<{ category: string; pricePerKm: number | null }[]>`
-      SELECT category, pricePerKm FROM "Property" WHERE id = ${propertyId}
+      SELECT category, "pricePerKm" FROM "Property" WHERE id = ${propertyId}
     `;
     const isTransport = catRows[0]?.category === "TRANSPORT";
     const pricePerKm = catRows[0]?.pricePerKm ?? 0;
@@ -152,12 +152,11 @@ export async function POST(req: NextRequest) {
       const checkInIso = checkInDate.toISOString();
       const matchingRooms = await prisma.$queryRawUnsafe<{ id: string }[]>(
         `SELECT r.id FROM "Room" r
-         WHERE r.propertyId = ? AND r.isActive = 1 AND r.name LIKE ?
+         WHERE r."propertyId" = $1 AND r."isActive" = true AND r.name LIKE $2
            AND r.id NOT IN (
-             SELECT b.roomId FROM "Booking" b
-             WHERE b.roomId IS NOT NULL AND b.status IN ('ACCEPTED', 'COMPLETED')
-               AND b.checkIn < strftime('%s', ?) * 1000
-               AND b.checkOut > strftime('%s', ?) * 1000
+             SELECT b."roomId" FROM "Booking" b
+             WHERE b."roomId" IS NOT NULL AND b.status IN ('ACCEPTED', 'COMPLETED')
+               AND b."checkIn" < $3::timestamptz AND b."checkOut" > $4::timestamptz
            )
          LIMIT 1`,
         propertyId, `${vehicleType} %`, checkOutIso, checkInIso

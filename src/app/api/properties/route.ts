@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   const where: Record<string, unknown> = { status: "ACTIVE" };
 
-  if (district) where.district = district; // SQLite: exact match (dropdown selection)
+  if (district) where.district = { contains: district, mode: "insensitive" };
   if (minPrice || maxPrice) {
     where.pricePerNight = {};
     if (minPrice) (where.pricePerNight as Record<string, number>).gte = parseFloat(minPrice);
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
   const extraRows: { id: string; category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }[] =
     propertyIds.length > 0
       ? await prisma.$queryRawUnsafe(
-          `SELECT id, category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard FROM "Property" WHERE id IN (${propertyIds.map(() => "?").join(",")})`,
+          `SELECT id, category, "pricePerKm", "mealPlan", "priceBnB", "priceHalfBoard", "priceFullBoard" FROM "Property" WHERE id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(",")})`,
           ...propertyIds
         )
       : [];
@@ -80,17 +80,17 @@ export async function GET(req: NextRequest) {
   for (const r of extraRows) extraMap[r.id] = { category: r.category, pricePerKm: r.pricePerKm, mealPlan: r.mealPlan ?? "ROOM_ONLY", priceBnB: r.priceBnB ?? null, priceHalfBoard: r.priceHalfBoard ?? null, priceFullBoard: r.priceFullBoard ?? null };
 
   // Fetch PropertyRating averages + counts for all returned properties
-  const pratingRows: { propertyId: string; avgScore: number; isSeeded: number }[] =
+  const pratingRows: { propertyId: string; avgScore: number; isSeeded: boolean }[] =
     propertyIds.length > 0
       ? await prisma.$queryRawUnsafe(
-          `SELECT propertyId, avgScore, isSeeded FROM "PropertyRating" WHERE propertyId IN (${propertyIds.map(() => "?").join(",")})`,
+          `SELECT "propertyId", "avgScore", "isSeeded" FROM "PropertyRating" WHERE "propertyId" IN (${propertyIds.map((_, i) => `$${i + 1}`).join(",")})`,
           ...propertyIds
         )
       : [];
   const pratingMap: Record<string, { scores: number[]; total: number; real: number }> = {};
   for (const row of pratingRows) {
     if (!pratingMap[row.propertyId]) pratingMap[row.propertyId] = { scores: [], total: 0, real: 0 };
-    pratingMap[row.propertyId].scores.push(row.avgScore);
+    pratingMap[row.propertyId].scores.push(Number(row.avgScore));
     pratingMap[row.propertyId].total++;
     if (!row.isSeeded) pratingMap[row.propertyId].real++;
   }
@@ -199,8 +199,9 @@ export async function POST(req: NextRequest) {
     const finalCategory = category ?? "STAY";
     const finalMealPlan = mealPlan ?? "ROOM_ONLY";
     const vehicleGroupsJson = vehicleGroups?.length ? JSON.stringify(vehicleGroups) : null;
+
     await prisma.$queryRawUnsafe(
-      `UPDATE "Property" SET "category" = ?, "mealPlan" = ?, "priceBnB" = ?, "priceHalfBoard" = ?, "priceFullBoard" = ?, "vehicleGroups" = ? WHERE "id" = ?`,
+      `UPDATE "Property" SET category = $1, "mealPlan" = $2, "priceBnB" = $3, "priceHalfBoard" = $4, "priceFullBoard" = $5, "vehicleGroups" = $6 WHERE id = $7`,
       finalCategory, finalMealPlan, priceBnB, priceHalfBoard, priceFullBoard, vehicleGroupsJson, property.id
     );
 
@@ -208,53 +209,76 @@ export async function POST(req: NextRequest) {
       await prisma.$executeRaw`UPDATE "Property" SET "pricePerKm" = ${pricePerKm} WHERE "id" = ${property.id}`;
     }
 
-    const now = new Date().toISOString();
-
     if (isTransport && vehicleGroups?.length) {
-      // Create one Room entry per individual vehicle (e.g. "Van 1", "Van 2", "Car 1"…)
+      // Batch INSERT all vehicle Room rows in one query
       const VEHICLE_SHORT: Record<string, string> = {
         CAR: "Car", VAN: "Van", TUK_TUK: "Tuk-Tuk", BUS: "Bus",
         BOAT: "Boat", MOTORBIKE: "Bike", JEEP: "Jeep", BICYCLE: "Bicycle",
       };
+      const vRows: unknown[] = [];
+      const vPlaceholders: string[] = [];
+      let vp = 1;
       for (const group of vehicleGroups) {
         const name = VEHICLE_SHORT[group.type] ?? group.type;
         for (let i = 1; i <= group.count; i++) {
-          const vehicleId = randomUUID();
-          await prisma.$queryRawUnsafe(
-            `INSERT INTO "Room" (id, propertyId, name, maxGuests, isActive, createdAt) VALUES (?, ?, ?, ?, 1, ?)`,
-            vehicleId, property.id, `${name} ${i}`, group.maxPassengers ?? 4, now
-          );
+          vRows.push(randomUUID(), property.id, `${name} ${i}`, group.maxPassengers ?? 4);
+          vPlaceholders.push(`($${vp++}, $${vp++}, $${vp++}, $${vp++}, true, NOW())`);
         }
+      }
+      if (vRows.length) {
+        await prisma.$queryRawUnsafe(
+          `INSERT INTO "Room" (id, "propertyId", name, "maxGuests", "isActive", "createdAt") VALUES ${vPlaceholders.join(", ")}`,
+          ...vRows
+        );
       }
     } else if (!isTransport && roomTypesInput?.length) {
-      // Create RoomType records and named Room instances for each type
+      // Batch INSERT all RoomType rows, then batch INSERT all Room rows
+      const rtRows: unknown[] = [];
+      const rtPlaceholders: string[] = [];
+      const rtIds: string[] = [];
+      let rtp = 1;
       for (const rt of roomTypesInput) {
         const rtId = randomUUID();
-        await prisma.$queryRawUnsafe(
-          `INSERT INTO "RoomType" (id, propertyId, typeName, displayLabel, roomCount, beds, maxGuests, bathrooms, amenities, pricePerNight, priceBnB, priceHalfBoard, priceFullBoard, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          rtId, property.id, rt.typeName, rt.displayLabel, rt.roomCount,
-          rt.beds, rt.maxGuests, rt.bathrooms,
-          JSON.stringify(rt.amenities ?? []),
-          rt.pricePerNight, rt.priceBnB ?? null, rt.priceHalfBoard ?? null, rt.priceFullBoard ?? null,
-          now, now
-        );
+        rtIds.push(rtId);
+        rtRows.push(rtId, property.id, rt.typeName, rt.displayLabel, rt.roomCount,
+          rt.beds, rt.maxGuests, rt.bathrooms, JSON.stringify(rt.amenities ?? []),
+          rt.pricePerNight, rt.priceBnB ?? null, rt.priceHalfBoard ?? null, rt.priceFullBoard ?? null);
+        rtPlaceholders.push(`($${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, NOW(), NOW())`);
+      }
+      await prisma.$queryRawUnsafe(
+        `INSERT INTO "RoomType" (id, "propertyId", "typeName", "displayLabel", "roomCount", beds, "maxGuests", bathrooms, amenities, "pricePerNight", "priceBnB", "priceHalfBoard", "priceFullBoard", "createdAt", "updatedAt") VALUES ${rtPlaceholders.join(", ")}`,
+        ...rtRows
+      );
+      const roomRows: unknown[] = [];
+      const roomPlaceholders: string[] = [];
+      let rp = 1;
+      for (let ti = 0; ti < roomTypesInput.length; ti++) {
+        const rt = roomTypesInput[ti];
         for (let i = 1; i <= rt.roomCount; i++) {
-          const roomId = randomUUID();
-          await prisma.$queryRawUnsafe(
-            `INSERT INTO "Room" (id, propertyId, roomTypeId, name, maxGuests, isActive, createdAt) VALUES (?, ?, ?, ?, ?, 1, ?)`,
-            roomId, property.id, rtId, `${rt.displayLabel} ${i}`, rt.maxGuests, now
-          );
+          roomRows.push(randomUUID(), property.id, rtIds[ti], `${rt.displayLabel} ${i}`, rt.maxGuests);
+          roomPlaceholders.push(`($${rp++}, $${rp++}, $${rp++}, $${rp++}, $${rp++}, true, NOW())`);
         }
       }
-    } else if (!isTransport) {
-      // Fallback: auto-create rooms from bedroom count for properties without room types
-      const bedroomCount = (d.bedrooms as number) || 0;
-      for (let i = 1; i <= bedroomCount; i++) {
-        const roomId = randomUUID();
+      if (roomRows.length) {
         await prisma.$queryRawUnsafe(
-          `INSERT INTO "Room" (id, propertyId, name, maxGuests, isActive, createdAt) VALUES (?, ?, ?, 2, 1, ?)`,
-          roomId, property.id, `Room ${i}`, now
+          `INSERT INTO "Room" (id, "propertyId", "roomTypeId", name, "maxGuests", "isActive", "createdAt") VALUES ${roomPlaceholders.join(", ")}`,
+          ...roomRows
+        );
+      }
+    } else if (!isTransport) {
+      // Fallback: batch INSERT rooms from bedroom count
+      const bedroomCount = (d.bedrooms as number) || 0;
+      if (bedroomCount > 0) {
+        const bRows: unknown[] = [];
+        const bPlaceholders: string[] = [];
+        let bp = 1;
+        for (let i = 1; i <= bedroomCount; i++) {
+          bRows.push(randomUUID(), property.id, `Room ${i}`);
+          bPlaceholders.push(`($${bp++}, $${bp++}, $${bp++}, 2, true, NOW())`);
+        }
+        await prisma.$queryRawUnsafe(
+          `INSERT INTO "Room" (id, "propertyId", name, "maxGuests", "isActive", "createdAt") VALUES ${bPlaceholders.join(", ")}`,
+          ...bRows
         );
       }
     }

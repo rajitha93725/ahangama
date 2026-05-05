@@ -18,9 +18,9 @@ export async function GET(
     id: string; q1: number; q2: number; q3: number; q4: number; q5: number;
     avgScore: number; comment: string | null; createdAt: string;
   }[]>(
-    `SELECT id, q1, q2, q3, q4, q5, avgScore, comment, createdAt
-     FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1
-     ORDER BY createdAt DESC`,
+    `SELECT id, q1, q2, q3, q4, q5, "avgScore", comment, "createdAt"
+     FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true
+     ORDER BY "createdAt" DESC`,
     id
   );
 
@@ -68,22 +68,26 @@ export async function PATCH(
 
   // Delete all existing seeded rows and re-insert with individual values
   await prisma.$queryRawUnsafe(
-    `DELETE FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1`,
+    `DELETE FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true`,
     id
   );
 
   const now = new Date();
+  const rows: unknown[] = [];
+  const placeholders: string[] = [];
+  let p = 1;
   for (let i = 0; i < 10; i++) {
     const g = guests[i];
     const avg = parseFloat(([g.q1, g.q2, g.q3, g.q4, g.q5].reduce((a, b) => a + b, 0) / 5).toFixed(2));
     const ts = new Date(now.getTime() - i * 86400000).toISOString();
-    await prisma.$queryRawUnsafe(
-      `INSERT INTO "PropertyRating" (id, propertyId, bookingId, guestId, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, avgScore, isSeeded, comment, createdAt)
-       VALUES (?, ?, NULL, NULL, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, ?, 1, ?, ?)`,
-      randomUUID(), id, g.q1, g.q2, g.q3, g.q4, g.q5, avg,
-      g.comment?.trim() || null, ts
-    );
+    rows.push(randomUUID(), id, g.q1, g.q2, g.q3, g.q4, g.q5, avg, g.comment?.trim() || null, ts);
+    placeholders.push(`($${p++}, $${p++}, NULL, NULL, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, 0, 0, 0, 0, 0, $${p++}, true, $${p++}, $${p++}::timestamp)`);
   }
+  await prisma.$queryRawUnsafe(
+    `INSERT INTO "PropertyRating" (id, "propertyId", "bookingId", "guestId", q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, "avgScore", "isSeeded", comment, "createdAt")
+     VALUES ${placeholders.join(", ")}`,
+    ...rows
+  );
 
   return NextResponse.json({ saved: 10 });
 }

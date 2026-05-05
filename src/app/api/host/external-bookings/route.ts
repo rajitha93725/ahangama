@@ -33,9 +33,9 @@ export async function POST(req: NextRequest) {
 
   // Verify the room belongs to this host
   const roomRows = await prisma.$queryRawUnsafe<{ id: string; propertyId: string }[]>(
-    `SELECT r.id, r.propertyId FROM "Room" r
-     INNER JOIN "Property" p ON p.id = r.propertyId
-     WHERE r.id = ? AND p.hostId = ? AND r.isActive = 1`,
+    `SELECT r.id, r."propertyId" FROM "Room" r
+     INNER JOIN "Property" p ON p.id = r."propertyId"
+     WHERE r.id = $1 AND p."hostId" = $2 AND r."isActive" = true`,
     roomId,
     session.user.id
   );
@@ -50,8 +50,8 @@ export async function POST(req: NextRequest) {
   // Double-booking check: existing EXTERNAL bookings that overlap
   const conflictExt = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT id FROM "ExternalBooking"
-     WHERE roomId = ? AND status = 'BOOKED'
-       AND checkIn < ? AND checkOut > ?`,
+     WHERE "roomId" = $1 AND status = 'BOOKED'
+       AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
     roomId,
     checkOutIso,
     checkInIso
@@ -63,9 +63,8 @@ export async function POST(req: NextRequest) {
   // Double-booking check: existing INTERNAL bookings that overlap (for rooms with roomId set)
   const conflictInt = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT id FROM "Booking"
-     WHERE roomId = ? AND status IN ('ACCEPTED', 'COMPLETED')
-       AND checkIn < strftime('%s', ?) * 1000
-       AND checkOut > strftime('%s', ?) * 1000`,
+     WHERE "roomId" = $1 AND status IN ('ACCEPTED', 'COMPLETED')
+       AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
     roomId,
     checkOutIso,
     checkInIso
@@ -75,18 +74,18 @@ export async function POST(req: NextRequest) {
   }
 
   const id = randomUUID();
-  const now = new Date().toISOString();
 
-  await prisma.$executeRaw`
-    INSERT INTO "ExternalBooking" (id, propertyId, roomId, checkIn, checkOut, source, guestName, notes, status, createdAt, updatedAt)
-    VALUES (${id}, ${propertyId}, ${roomId}, ${checkInIso}, ${checkOutIso}, ${source}, ${guestName ?? null}, ${notes ?? null}, 'BOOKED', ${now}, ${now})
-  `;
+  await prisma.$queryRawUnsafe(
+    `INSERT INTO "ExternalBooking" (id, "propertyId", "roomId", "checkIn", "checkOut", source, "guestName", notes, status, "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4::timestamp, $5::timestamp, $6, $7, $8, 'BOOKED', NOW(), NOW())`,
+    id, propertyId, roomId, checkInIso, checkOutIso, source, guestName ?? null, notes ?? null
+  );
 
   const [booking] = await prisma.$queryRawUnsafe<{
     id: string; propertyId: string; roomId: string; checkIn: string; checkOut: string;
     source: string; guestName: string | null; notes: string | null; status: string; createdAt: string;
   }[]>(
-    `SELECT * FROM "ExternalBooking" WHERE id = ?`,
+    `SELECT * FROM "ExternalBooking" WHERE id = $1`,
     id
   );
 

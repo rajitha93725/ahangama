@@ -35,7 +35,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   // PropertyRating: average of all avgScore values (includes seeded)
   const prRows = await prisma.$queryRawUnsafe<{ avgScore: number }[]>(
-    `SELECT avgScore FROM "PropertyRating" WHERE propertyId = ?`,
+    `SELECT "avgScore" FROM "PropertyRating" WHERE "propertyId" = $1`,
     id
   );
   const propertyRating =
@@ -48,22 +48,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const seededFeedback = await prisma.$queryRawUnsafe<{
     avgScore: number; createdAt: string; comment: string | null;
   }[]>(
-    `SELECT avgScore, createdAt, comment
-     FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1
-     ORDER BY createdAt DESC`,
+    `SELECT "avgScore", "createdAt", comment
+     FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true
+     ORDER BY "createdAt" DESC`,
     id
   );
 
-  // Real guest reviews (isSeeded=0) — appended after seeded, newest first
+  // Real guest reviews (isSeeded=false) — appended after seeded, newest first
   const guestFeedback = await prisma.$queryRawUnsafe<{
     avgScore: number; createdAt: string; comment: string | null;
     guestName: string | null; guestImage: string | null;
   }[]>(
-    `SELECT pr.avgScore, pr.createdAt, pr.comment, u.name as guestName, u.image as guestImage
+    `SELECT pr."avgScore", pr."createdAt", pr.comment, u.name as "guestName", u.image as "guestImage"
      FROM "PropertyRating" pr
-     LEFT JOIN "User" u ON u.id = pr.guestId
-     WHERE pr.propertyId = ? AND pr.isSeeded = 0
-     ORDER BY pr.createdAt DESC`,
+     LEFT JOIN "User" u ON u.id = pr."guestId"
+     WHERE pr."propertyId" = $1 AND pr."isSeeded" = false
+     ORDER BY pr."createdAt" DESC`,
     id
   );
 
@@ -74,9 +74,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     pricePerNight: number; priceBnB: number | null; priceHalfBoard: number | null;
     priceFullBoard: number | null;
   }[]>(
-    `SELECT id, typeName, displayLabel, roomCount, beds, maxGuests, bathrooms, amenities,
-            pricePerNight, priceBnB, priceHalfBoard, priceFullBoard
-     FROM "RoomType" WHERE propertyId = ? ORDER BY rowid ASC`,
+    `SELECT id, "typeName", "displayLabel", "roomCount", beds, "maxGuests", bathrooms, amenities,
+            "pricePerNight", "priceBnB", "priceHalfBoard", "priceFullBoard"
+     FROM "RoomType" WHERE "propertyId" = $1 ORDER BY "createdAt" ASC`,
     id
   );
   const roomTypes = roomTypeRows.map((rt) => ({
@@ -150,9 +150,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   ].filter(Boolean) as [string, unknown][];
 
   if (rawCols.length > 0) {
-    const sets = rawCols.map(([col]) => `${col} = ?`).join(", ");
-    const vals = [...rawCols.map(([, v]) => v), id];
-    await prisma.$queryRawUnsafe(`UPDATE "Property" SET ${sets} WHERE id = ?`, ...vals);
+    const vals = rawCols.map(([, v]) => v);
+    const sets = rawCols.map(([col], i) => `${col} = $${i + 1}`).join(", ");
+    vals.push(id);
+    await prisma.$queryRawUnsafe(`UPDATE "Property" SET ${sets} WHERE id = $${vals.length}`, ...vals);
   }
 
   return NextResponse.json(updated);

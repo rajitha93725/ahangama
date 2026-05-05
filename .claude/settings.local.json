@@ -26,7 +26,14 @@
       "Bash(npm test:*)",
       "Bash(sqlite3 \"C:/AutomationDI/TryOuts/ahangama/prisma/dev.db\" \"ALTER TABLE Property ADD COLUMN mealPlan TEXT NOT NULL DEFAULT 'ROOM_ONLY';\")",
       "Bash(sqlite3 prisma/dev.db)",
-      "Bash(find *)"
+      "Bash(find *)",
+      "Bash(Get-ChildItem C:\\\\AutomationDI\\\\TryOuts\\\\ahangama -Depth 1)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(Sort-Object PSIsContainer -Descending)",
+      "PowerShell(Get-ChildItem \"C:\\\\AutomationDI\\\\TryOuts\\\\ahangama\" | ForEach-Object { \"$\\($_.PSIsContainer\\) $\\($_.Name\\)\" })",
+      "PowerShell(Test-NetConnection *)",
+      "PowerShell(cd C:\\\\AutomationDI\\\\TryOuts\\\\ahangama; node -e \"const { PrismaClient } = require\\('@prisma/client'\\); const p = new PrismaClient\\(\\); console.log\\('Client OK'\\); p.$disconnect\\(\\);\" 2>&1)",
+      "PowerShell(cd C:\\\\AutomationDI\\\\TryOuts\\\\ahangama; Get-Content node_modules\\\\@prisma\\\\client\\\\runtime\\\\library.d.ts | Select-Object -First 5 2>&1; Write-Host \"---\"; \\(Get-Content node_modules\\\\.prisma\\\\client\\\\schema.prisma -ErrorAction SilentlyContinue | Select-String \"provider\"\\) 2>&1)"
     ]
   }
 }

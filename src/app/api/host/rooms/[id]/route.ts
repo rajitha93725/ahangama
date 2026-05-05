@@ -14,8 +14,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // Verify ownership via property join
   const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT r.id FROM "Room" r
-     INNER JOIN "Property" p ON p.id = r.propertyId
-     WHERE r.id = ? AND p.hostId = ?`,
+     INNER JOIN "Property" p ON p.id = r."propertyId"
+     WHERE r.id = $1 AND p."hostId" = $2`,
     id,
     session.user.id
   );
@@ -30,14 +30,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Room name cannot be empty" }, { status: 400 });
   }
 
-  // Build dynamic SET clause
+  // Build dynamic SET clause with PostgreSQL $N placeholders
   const updates: string[] = [];
   const values: unknown[] = [];
 
-  if (name !== undefined) { updates.push(`name = ?`); values.push(name.trim()); }
-  if (description !== undefined) { updates.push(`description = ?`); values.push(description || null); }
-  if (maxGuests !== undefined) { updates.push(`maxGuests = ?`); values.push(Number(maxGuests)); }
-  if (isActive !== undefined) { updates.push(`isActive = ?`); values.push(isActive ? 1 : 0); }
+  if (name !== undefined) { values.push(name.trim()); updates.push(`name = $${values.length}`); }
+  if (description !== undefined) { values.push(description || null); updates.push(`description = $${values.length}`); }
+  if (maxGuests !== undefined) { values.push(Number(maxGuests)); updates.push(`"maxGuests" = $${values.length}`); }
+  if (isActive !== undefined) { values.push(isActive); updates.push(`"isActive" = $${values.length}`); }
 
   if (!updates.length) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
@@ -45,12 +45,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   values.push(id);
   await prisma.$queryRawUnsafe(
-    `UPDATE "Room" SET ${updates.join(", ")} WHERE id = ?`,
+    `UPDATE "Room" SET ${updates.join(", ")} WHERE id = $${values.length}`,
     ...values
   );
 
-  const [room] = await prisma.$queryRawUnsafe<{ id: string; propertyId: string; name: string; description: string | null; maxGuests: number; isActive: number }[]>(
-    `SELECT * FROM "Room" WHERE id = ?`,
+  const [room] = await prisma.$queryRawUnsafe<{ id: string; propertyId: string; name: string; description: string | null; maxGuests: number; isActive: boolean }[]>(
+    `SELECT * FROM "Room" WHERE id = $1`,
     id
   );
 
@@ -68,8 +68,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT r.id FROM "Room" r
-     INNER JOIN "Property" p ON p.id = r.propertyId
-     WHERE r.id = ? AND p.hostId = ?`,
+     INNER JOIN "Property" p ON p.id = r."propertyId"
+     WHERE r.id = $1 AND p."hostId" = $2`,
     id,
     session.user.id
   );
@@ -77,7 +77,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: "Room not found" }, { status: 404 });
   }
 
-  await prisma.$executeRaw`UPDATE "Room" SET isActive = 0 WHERE id = ${id}`;
+  await prisma.$executeRaw`UPDATE "Room" SET "isActive" = false WHERE id = ${id}`;
 
   return NextResponse.json({ success: true });
 }

@@ -35,22 +35,26 @@ export async function POST(
 
   // On first approval, seed 10 default perfect ratings (5 questions × 2 pts = 10 each)
   if (action === "approve") {
-    const existingCount = await prisma.$queryRawUnsafe<{ cnt: number }[]>(
-      `SELECT COUNT(*) as cnt FROM "PropertyRating" WHERE propertyId = ? AND isSeeded = 1`,
+    const existingCount = await prisma.$queryRawUnsafe<{ cnt: bigint }[]>(
+      `SELECT COUNT(*) as cnt FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true`,
       id
     );
     const seededCount = Number(existingCount[0]?.cnt ?? 0);
     if (seededCount < 10) {
       const now = new Date();
+      const rows: unknown[] = [];
+      const placeholders: string[] = [];
+      let p = 1;
       for (let i = seededCount; i < 10; i++) {
         const ts = new Date(now.getTime() - i * 86400000).toISOString();
-        // q1-q5 = 10 (perfect), q6-q10 = 0 (unused), avgScore = 10
-        await prisma.$queryRawUnsafe(
-          `INSERT INTO "PropertyRating" (id, propertyId, bookingId, guestId, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, avgScore, isSeeded, createdAt)
-           VALUES (?, ?, NULL, NULL, 10, 10, 10, 10, 10, 0, 0, 0, 0, 0, 10, 1, ?)`,
-          randomUUID(), id, ts
-        );
+        rows.push(randomUUID(), id, ts);
+        placeholders.push(`($${p++}, $${p++}, NULL, NULL, 10, 10, 10, 10, 10, 0, 0, 0, 0, 0, 10, true, $${p++}::timestamp)`);
       }
+      await prisma.$queryRawUnsafe(
+        `INSERT INTO "PropertyRating" (id, "propertyId", "bookingId", "guestId", q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, "avgScore", "isSeeded", "createdAt")
+         VALUES ${placeholders.join(", ")}`,
+        ...rows
+      );
     }
   }
 

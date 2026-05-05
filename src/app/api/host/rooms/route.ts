@@ -26,13 +26,13 @@ export async function GET(req: NextRequest) {
   // Build query — join with Property to enforce host ownership
   const sql = propertyId
     ? `SELECT r.* FROM "Room" r
-       INNER JOIN "Property" p ON p.id = r.propertyId
-       WHERE p.hostId = ? AND r.propertyId = ? AND r.isActive = 1
-       ORDER BY r.createdAt ASC`
+       INNER JOIN "Property" p ON p.id = r."propertyId"
+       WHERE p."hostId" = $1 AND r."propertyId" = $2 AND r."isActive" = true
+       ORDER BY r."createdAt" ASC`
     : `SELECT r.* FROM "Room" r
-       INNER JOIN "Property" p ON p.id = r.propertyId
-       WHERE p.hostId = ? AND r.isActive = 1
-       ORDER BY r.propertyId, r.createdAt ASC`;
+       INNER JOIN "Property" p ON p.id = r."propertyId"
+       WHERE p."hostId" = $1 AND r."isActive" = true
+       ORDER BY r."propertyId", r."createdAt" ASC`;
 
   const params = propertyId ? [session.user.id, propertyId] : [session.user.id];
   const rooms = await prisma.$queryRawUnsafe<
@@ -66,15 +66,15 @@ export async function POST(req: NextRequest) {
 
   const id = randomUUID();
   const guests = Number(maxGuests) || 2;
-  const now = new Date().toISOString();
 
-  await prisma.$executeRaw`
-    INSERT INTO "Room" (id, propertyId, name, description, maxGuests, isActive, createdAt)
-    VALUES (${id}, ${propertyId}, ${name.trim()}, ${description ?? null}, ${guests}, 1, ${now})
-  `;
+  await prisma.$queryRawUnsafe(
+    `INSERT INTO "Room" (id, "propertyId", name, description, "maxGuests", "isActive", "createdAt")
+     VALUES ($1, $2, $3, $4, $5, true, NOW())`,
+    id, propertyId, name.trim(), description ?? null, guests
+  );
 
-  const [room] = await prisma.$queryRawUnsafe<{ id: string; propertyId: string; name: string; description: string | null; maxGuests: number; isActive: number; createdAt: string }[]>(
-    `SELECT * FROM "Room" WHERE id = ?`,
+  const [room] = await prisma.$queryRawUnsafe<{ id: string; propertyId: string; name: string; description: string | null; maxGuests: number; isActive: boolean; createdAt: string }[]>(
+    `SELECT * FROM "Room" WHERE id = $1`,
     id
   );
 

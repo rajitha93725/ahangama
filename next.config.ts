@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
     ],
     unoptimized: true,
   },
-  serverExternalPackages: ["bcryptjs", "better-sqlite3"],
+  serverExternalPackages: ["bcryptjs"],
 };
 
 export default nextConfig;

@@ -27,7 +27,7 @@ export async function GET(
 
   // Get all active rooms for this property
   const rooms = await prisma.$queryRawUnsafe<{ id: string; name: string; maxGuests: number; roomTypeId: string | null }[]>(
-    `SELECT id, name, maxGuests, roomTypeId FROM "Room" WHERE propertyId = ? AND isActive = 1 ORDER BY ROWID ASC`,
+    `SELECT id, name, "maxGuests", "roomTypeId" FROM "Room" WHERE "propertyId" = $1 AND "isActive" = true ORDER BY "createdAt" ASC`,
     propertyId
   );
 
@@ -43,17 +43,16 @@ export async function GET(
   for (const room of rooms) {
     const extConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `SELECT id FROM "ExternalBooking"
-       WHERE roomId = ? AND status = 'BOOKED'
-         AND checkIn < ? AND checkOut > ?`,
+       WHERE "roomId" = $1 AND status = 'BOOKED'
+         AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
       room.id, checkOutIso, checkInIso
     );
     if (extConflict.length > 0) continue;
 
     const intConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `SELECT id FROM "Booking"
-       WHERE roomId = ? AND status IN ('ACCEPTED', 'COMPLETED')
-         AND checkIn < strftime('%s', ?) * 1000
-         AND checkOut > strftime('%s', ?) * 1000`,
+       WHERE "roomId" = $1 AND status IN ('ACCEPTED', 'COMPLETED')
+         AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
       room.id, checkOutIso, checkInIso
     );
     if (intConflict.length > 0) continue;
@@ -73,9 +72,9 @@ export async function GET(
     pricePerNight: number; priceBnB: number | null;
     priceHalfBoard: number | null; priceFullBoard: number | null;
   }[]>(
-    `SELECT id, typeName, displayLabel, roomCount, beds, maxGuests, bathrooms, amenities,
-            pricePerNight, priceBnB, priceHalfBoard, priceFullBoard
-     FROM "RoomType" WHERE propertyId = ? ORDER BY rowid ASC`,
+    `SELECT id, "typeName", "displayLabel", "roomCount", beds, "maxGuests", bathrooms, amenities,
+            "pricePerNight", "priceBnB", "priceHalfBoard", "priceFullBoard"
+     FROM "RoomType" WHERE "propertyId" = $1 ORDER BY "createdAt" ASC`,
     propertyId
   );
 

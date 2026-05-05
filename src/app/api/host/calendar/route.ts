@@ -84,35 +84,35 @@ export async function GET(req: NextRequest) {
   }
 
   const propertyIds = properties.map((p) => p.id);
-  const propPlaceholders = propertyIds.map(() => "?").join(",");
+  const propPH = (start = 1) => propertyIds.map((_, i) => `$${start + i}`).join(",");
 
-  // Fetch category for each property (stale Prisma client doesn't know this column)
+  // Fetch category for each property
   const categoryMap: Record<string, boolean> = {};
   if (propertyIds.length > 0) {
     const catRows = await prisma.$queryRawUnsafe<{ id: string; category: string }[]>(
-      `SELECT id, category FROM "Property" WHERE id IN (${propPlaceholders})`,
+      `SELECT id, category FROM "Property" WHERE id IN (${propPH()})`,
       ...propertyIds
     );
     for (const r of catRows) categoryMap[r.id] = r.category === "TRANSPORT";
   }
 
   // 2. Unassigned confirmed Ahangama bookings (no roomId) active on this day
-  //    These are bookings confirmed in the Ahangama system but not yet linked to a specific room
+  const n = propertyIds.length;
   const unassignedRows = await prisma.$queryRawUnsafe<
     { id: string; propertyId: string; guestName: string; checkIn: string; checkOut: string; status: string; guests: number }[]
   >(
-    `SELECT b.id, b.propertyId, u.name as guestName,
-            strftime('%Y-%m-%dT%H:%M:%SZ', b.checkIn / 1000, 'unixepoch') as checkIn,
-            strftime('%Y-%m-%dT%H:%M:%SZ', b.checkOut / 1000, 'unixepoch') as checkOut,
+    `SELECT b.id, b."propertyId", u.name as "guestName",
+            to_char(b."checkIn" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkIn",
+            to_char(b."checkOut" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkOut",
             b.status, b.guests
      FROM "Booking" b
-     INNER JOIN "User" u ON u.id = b.guestId
-     WHERE b.roomId IS NULL
-       AND b.propertyId IN (${propPlaceholders})
+     INNER JOIN "User" u ON u.id = b."guestId"
+     WHERE b."roomId" IS NULL
+       AND b."propertyId" IN (${propPH()})
        AND b.status IN ('ACCEPTED', 'COMPLETED')
-       AND b.checkIn <= strftime('%s', ?) * 1000
-       AND b.checkOut > strftime('%s', ?) * 1000
-     ORDER BY b.checkIn ASC`,
+       AND b."checkIn" <= $${n + 1}::timestamptz
+       AND b."checkOut" > $${n + 2}::timestamptz
+     ORDER BY b."checkIn" ASC`,
     ...propertyIds,
     dayEndIso,
     dayStartIso
@@ -122,9 +122,9 @@ export async function GET(req: NextRequest) {
   const allRooms = await prisma.$queryRawUnsafe<
     { id: string; propertyId: string; name: string; maxGuests: number }[]
   >(
-    `SELECT id, propertyId, name, maxGuests FROM "Room"
-     WHERE propertyId IN (${propPlaceholders}) AND isActive = 1
-     ORDER BY propertyId, ROWID ASC`,
+    `SELECT id, "propertyId", name, "maxGuests" FROM "Room"
+     WHERE "propertyId" IN (${propPH()}) AND "isActive" = true
+     ORDER BY "propertyId", "createdAt" ASC`,
     ...propertyIds
   );
 
@@ -134,37 +134,38 @@ export async function GET(req: NextRequest) {
 
   if (allRooms.length) {
     const roomIds = allRooms.map((r) => r.id);
-    const roomPlaceholders = roomIds.map(() => "?").join(",");
+    const m = roomIds.length;
+    const roomPH = (start = 1) => roomIds.map((_, i) => `$${start + i}`).join(",");
 
     // 4. Room-assigned internal bookings active on this day
     const internalBookings = await prisma.$queryRawUnsafe<
       { id: string; roomId: string; guestName: string; checkIn: string; checkOut: string; status: string }[]
     >(
-      `SELECT b.id, b.roomId, u.name as guestName,
-              strftime('%Y-%m-%dT%H:%M:%SZ', b.checkIn / 1000, 'unixepoch') as checkIn,
-              strftime('%Y-%m-%dT%H:%M:%SZ', b.checkOut / 1000, 'unixepoch') as checkOut,
+      `SELECT b.id, b."roomId", u.name as "guestName",
+              to_char(b."checkIn" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkIn",
+              to_char(b."checkOut" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkOut",
               b.status
        FROM "Booking" b
-       INNER JOIN "User" u ON u.id = b.guestId
-       WHERE b.roomId IN (${roomPlaceholders})
+       INNER JOIN "User" u ON u.id = b."guestId"
+       WHERE b."roomId" IN (${roomPH()})
          AND b.status IN ('ACCEPTED', 'COMPLETED')
-         AND b.checkIn <= strftime('%s', ?) * 1000
-         AND b.checkOut > strftime('%s', ?) * 1000`,
+         AND b."checkIn" <= $${m + 1}::timestamptz
+         AND b."checkOut" > $${m + 2}::timestamptz`,
       ...roomIds,
       dayEndIso,
       dayStartIso
     );
 
     // 5. External bookings active on this day
-    let extSql = `SELECT id, roomId, source, guestName, notes, checkIn, checkOut
+    let extSql = `SELECT id, "roomId", source, "guestName", notes, "checkIn", "checkOut"
        FROM "ExternalBooking"
-       WHERE roomId IN (${roomPlaceholders})
+       WHERE "roomId" IN (${roomPH()})
          AND status = 'BOOKED'
-         AND checkIn <= ?
-         AND checkOut > ?`;
+         AND "checkIn" <= $${m + 1}::timestamptz
+         AND "checkOut" > $${m + 2}::timestamptz`;
     const extParams: unknown[] = [...roomIds, dayEndIso, dayStartIso];
     if (sourceFilter) {
-      extSql += ` AND source = ?`;
+      extSql += ` AND source = $${m + 3}`;
       extParams.push(sourceFilter);
     }
 

@@ -26,9 +26,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!user || !user.passwordHash) return null;
         const valid = await bcrypt.compare(credentials.password as string, user.passwordHash);
         if (!valid) return null;
-        if (!user.isActive) {
-          throw new Error("PENDING_APPROVAL");
-        }
+        if (!user.isActive) return null;
         return {
           id: user.id,
           email: user.email,

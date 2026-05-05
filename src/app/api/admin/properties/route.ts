@@ -47,9 +47,9 @@ export async function GET(req: NextRequest) {
 
   // Fetch category + pricePerKm for these IDs via raw SQL
   const ids = properties.map((p) => p.id);
-  const placeholders = ids.map(() => "?").join(",");
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
   const extras = await prisma.$queryRawUnsafe<{ id: string; category: string; pricePerKm: number | null }[]>(
-    `SELECT id, category, pricePerKm FROM "Property" WHERE id IN (${placeholders})`,
+    `SELECT id, category, "pricePerKm" FROM "Property" WHERE id IN (${placeholders})`,
     ...ids
   );
   const extraMap = Object.fromEntries(extras.map((e) => [e.id, e]));

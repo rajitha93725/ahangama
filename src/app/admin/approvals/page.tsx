@@ -44,7 +44,8 @@ export default function AdminApprovalsPage() {
       setPendingUsers(data.filter((u) => !u.isActive).map((u) => ({ ...u, type: "user" as const })));
     }
     if (propsRes.ok) {
-      const data: PendingProperty[] = await propsRes.json();
+      const json = await propsRes.json();
+      const data: PendingProperty[] = json.data ?? [];
       setPendingProperties(data.map((p) => ({ ...p, type: "property" as const })));
     }
     setLoading(false);

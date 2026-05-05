@@ -15,9 +15,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // Verify ownership
   const rows = await prisma.$queryRawUnsafe<{ id: string; roomId: string; checkIn: string; checkOut: string }[]>(
-    `SELECT eb.id, eb.roomId, eb.checkIn, eb.checkOut FROM "ExternalBooking" eb
-     INNER JOIN "Property" p ON p.id = eb.propertyId
-     WHERE eb.id = ? AND p.hostId = ?`,
+    `SELECT eb.id, eb."roomId", eb."checkIn", eb."checkOut" FROM "ExternalBooking" eb
+     INNER JOIN "Property" p ON p.id = eb."propertyId"
+     WHERE eb.id = $1 AND p."hostId" = $2`,
     id,
     session.user.id
   );
@@ -50,8 +50,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (checkIn || checkOut) {
     const conflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `SELECT id FROM "ExternalBooking"
-       WHERE roomId = ? AND status = 'BOOKED' AND id != ?
-         AND checkIn < ? AND checkOut > ?`,
+       WHERE "roomId" = $1 AND status = 'BOOKED' AND id != $2
+         AND "checkIn" < $3::timestamptz AND "checkOut" > $4::timestamptz`,
       existing.roomId,
       id,
       checkOutIso,
@@ -66,18 +66,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const updates: string[] = [];
   const values: unknown[] = [];
 
-  if (checkIn) { updates.push(`checkIn = ?`); values.push(checkInIso); }
-  if (checkOut) { updates.push(`checkOut = ?`); values.push(checkOutIso); }
-  if (source) { updates.push(`source = ?`); values.push(source); }
-  if (guestName !== undefined) { updates.push(`guestName = ?`); values.push(guestName || null); }
-  if (notes !== undefined) { updates.push(`notes = ?`); values.push(notes || null); }
+  if (checkIn) { values.push(checkInIso); updates.push(`"checkIn" = $${values.length}`); }
+  if (checkOut) { values.push(checkOutIso); updates.push(`"checkOut" = $${values.length}`); }
+  if (source) { values.push(source); updates.push(`source = $${values.length}`); }
+  if (guestName !== undefined) { values.push(guestName || null); updates.push(`"guestName" = $${values.length}`); }
+  if (notes !== undefined) { values.push(notes || null); updates.push(`notes = $${values.length}`); }
 
-  updates.push(`updatedAt = ?`);
   values.push(now);
+  updates.push(`"updatedAt" = $${values.length}`);
   values.push(id);
 
   await prisma.$queryRawUnsafe(
-    `UPDATE "ExternalBooking" SET ${updates.join(", ")} WHERE id = ?`,
+    `UPDATE "ExternalBooking" SET ${updates.join(", ")} WHERE id = $${values.length}`,
     ...values
   );
 
@@ -85,7 +85,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     id: string; propertyId: string; roomId: string; checkIn: string; checkOut: string;
     source: string; guestName: string | null; notes: string | null; status: string;
   }[]>(
-    `SELECT * FROM "ExternalBooking" WHERE id = ?`,
+    `SELECT * FROM "ExternalBooking" WHERE id = $1`,
     id
   );
 
@@ -103,8 +103,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT eb.id FROM "ExternalBooking" eb
-     INNER JOIN "Property" p ON p.id = eb.propertyId
-     WHERE eb.id = ? AND p.hostId = ?`,
+     INNER JOIN "Property" p ON p.id = eb."propertyId"
+     WHERE eb.id = $1 AND p."hostId" = $2`,
     id,
     session.user.id
   );

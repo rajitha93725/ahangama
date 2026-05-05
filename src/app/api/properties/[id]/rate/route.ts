@@ -37,7 +37,7 @@ export async function POST(
 
   // Prevent duplicate rating for same booking
   const existing = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM "PropertyRating" WHERE bookingId = ? LIMIT 1`,
+    `SELECT id FROM "PropertyRating" WHERE "bookingId" = $1 LIMIT 1`,
     bookingId
   );
   if (existing.length > 0) {
@@ -47,14 +47,13 @@ export async function POST(
   const [q1, q2, q3, q4, q5] = scores;
   // avgScore = sum of 5 scores / 5 → gives 0–10 range
   const avgScore = parseFloat((scores.reduce((a, b) => a + b, 0) / 5).toFixed(2));
-  const now = new Date().toISOString();
 
   await prisma.$queryRawUnsafe(
-    `INSERT INTO "PropertyRating" (id, propertyId, bookingId, guestId, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, avgScore, isSeeded, comment, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, ?, 0, ?, ?)`,
+    `INSERT INTO "PropertyRating" (id, "propertyId", "bookingId", "guestId", q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, "avgScore", "isSeeded", comment, "createdAt")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, 0, 0, 0, 0, $10, false, $11, NOW())`,
     randomUUID(), propertyId, bookingId, session.user.id,
     q1, q2, q3, q4, q5,
-    avgScore, comment ?? null, now
+    avgScore, comment ?? null
   );
 
   return NextResponse.json({ avgScore: parseFloat(avgScore.toFixed(1)) }, { status: 201 });

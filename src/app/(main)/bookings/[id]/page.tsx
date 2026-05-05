@@ -57,9 +57,9 @@ export default async function BookingDetailPage({ params }: Props) {
   const transportRow = await prisma.$queryRaw<
     { pickupPoint: string | null; dropPoint: string | null; distanceKm: number | null; category: string; mealPlan: string; roomSelections: string | null }[]
   >`
-    SELECT b.pickupPoint, b.dropPoint, b.distanceKm, b.mealPlan, b.roomSelections, p.category
+    SELECT b."pickupPoint", b."dropPoint", b."distanceKm", b."mealPlan", b."roomSelections", p.category
     FROM "Booking" b
-    JOIN "Property" p ON p.id = b.propertyId
+    JOIN "Property" p ON p.id = b."propertyId"
     WHERE b.id = ${id}
   `;
   const transportInfo = transportRow[0] ?? { pickupPoint: null, dropPoint: null, distanceKm: null, category: "STAY", mealPlan: "ROOM_ONLY", roomSelections: null };
@@ -75,7 +75,7 @@ export default async function BookingDetailPage({ params }: Props) {
 
   // Fetch the property's current PropertyRating (avg across all rated rows)
   const ratingRows = await prisma.$queryRawUnsafe<{ avgScore: number }[]>(
-    `SELECT avgScore FROM "PropertyRating" WHERE propertyId = ?`,
+    `SELECT "avgScore" FROM "PropertyRating" WHERE "propertyId" = $1`,
     booking.propertyId
   );
   const propertyAvgScore =
@@ -87,7 +87,7 @@ export default async function BookingDetailPage({ params }: Props) {
   const canRate = isGuest && booking.status === "COMPLETED";
   const hasRated = canRate
     ? (await prisma.$queryRawUnsafe<{ id: string }[]>(
-        `SELECT id FROM "PropertyRating" WHERE bookingId = ? LIMIT 1`,
+        `SELECT id FROM "PropertyRating" WHERE "bookingId" = $1 LIMIT 1`,
         booking.id
       )).length > 0
     : false;

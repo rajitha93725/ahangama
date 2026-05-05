@@ -17,26 +17,43 @@ export default function LoginForm({ callbackUrl = "/" }: Props) {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
+  const [adminPhone, setAdminPhone] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setIsPending(false);
+    setAdminPhone(null);
+
     const result = await signIn("credentials", {
       identifier,
       password,
       redirect: false,
     });
-    setLoading(false);
-    if (result?.error) {
-      if (result.error.includes("PENDING_APPROVAL")) {
-        setError("Your account is pending admin approval. Please check back later.");
-      } else {
-        setError("Invalid email or password");
-      }
-    } else {
+
+    if (!result?.error) {
       router.push(callbackUrl);
       router.refresh();
+      return;
+    }
+
+    // signIn failed — check if it's a pending-approval account
+    const check = await fetch("/api/auth/pending-check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password }),
+    });
+    const { pending, adminPhone } = await check.json();
+
+    setLoading(false);
+
+    if (pending) {
+      setIsPending(true);
+      setAdminPhone(adminPhone ?? null);
+    } else {
+      setError("Invalid email or password");
     }
   };
 
@@ -75,8 +92,28 @@ export default function LoginForm({ callbackUrl = "/" }: Props) {
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 text-red-600 text-sm px-4 py-2.5 rounded-xl border border-red-200">
+      {isPending && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-4 space-y-2">
+          <p className="text-sm font-semibold text-amber-800">Profile Pending Approval</p>
+          <p className="text-sm text-amber-700 leading-relaxed">
+            Your profile is not approved yet. It will be approved within 24 hours.
+          </p>
+          {adminPhone && (
+            <p className="text-sm text-amber-700">
+              If urgent, give us a call at{" "}
+              <a
+                href={`tel:${adminPhone}`}
+                className="font-semibold text-amber-900 whitespace-nowrap hover:underline"
+              >
+                {adminPhone}
+              </a>
+            </p>
+          )}
+        </div>
+      )}
+
+      {error && !isPending && (
+        <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl border border-red-200">
           {error}
         </div>
       )}

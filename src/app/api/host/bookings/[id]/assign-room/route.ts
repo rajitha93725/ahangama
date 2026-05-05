@@ -23,13 +23,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const bookingRows = await prisma.$queryRawUnsafe<
     { id: string; propertyId: string; checkIn: string; checkOut: string; status: string }[]
   >(
-    `SELECT b.id, b.propertyId,
-            strftime('%Y-%m-%dT%H:%M:%SZ', b.checkIn / 1000, 'unixepoch') as checkIn,
-            strftime('%Y-%m-%dT%H:%M:%SZ', b.checkOut / 1000, 'unixepoch') as checkOut,
+    `SELECT b.id, b."propertyId",
+            to_char(b."checkIn" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkIn",
+            to_char(b."checkOut" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkOut",
             b.status
      FROM "Booking" b
-     INNER JOIN "Property" p ON p.id = b.propertyId
-     WHERE b.id = ? AND p.hostId = ? AND b.status IN ('ACCEPTED', 'COMPLETED')`,
+     INNER JOIN "Property" p ON p.id = b."propertyId"
+     WHERE b.id = $1 AND p."hostId" = $2 AND b.status IN ('ACCEPTED', 'COMPLETED')`,
     id,
     session.user.id
   );
@@ -40,9 +40,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   // Verify the room belongs to this host's property and is active
   const roomRows = await prisma.$queryRawUnsafe<{ id: string; propertyId: string }[]>(
-    `SELECT r.id, r.propertyId FROM "Room" r
-     INNER JOIN "Property" p ON p.id = r.propertyId
-     WHERE r.id = ? AND p.hostId = ? AND r.isActive = 1`,
+    `SELECT r.id, r."propertyId" FROM "Room" r
+     INNER JOIN "Property" p ON p.id = r."propertyId"
+     WHERE r.id = $1 AND p."hostId" = $2 AND r."isActive" = true`,
     roomId,
     session.user.id
   );
@@ -59,8 +59,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Double-booking check: external bookings overlapping the full stay
   const conflictExt = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT id FROM "ExternalBooking"
-     WHERE roomId = ? AND status = 'BOOKED'
-       AND checkIn < ? AND checkOut > ?`,
+     WHERE "roomId" = $1 AND status = 'BOOKED'
+       AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
     roomId,
     checkOutIso,
     checkInIso
@@ -72,9 +72,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Double-booking check: other internal bookings for this room
   const conflictInt = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `SELECT id FROM "Booking"
-     WHERE roomId = ? AND id != ? AND status IN ('ACCEPTED', 'COMPLETED')
-       AND checkIn < strftime('%s', ?) * 1000
-       AND checkOut > strftime('%s', ?) * 1000`,
+     WHERE "roomId" = $1 AND id != $2 AND status IN ('ACCEPTED', 'COMPLETED')
+       AND "checkIn" < $3::timestamptz AND "checkOut" > $4::timestamptz`,
     roomId,
     id,
     checkOutIso,

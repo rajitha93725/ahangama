@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── AUTH ──────────────────────────────────────────────────────────────────
@@ -88,6 +89,12 @@ model Property {
   pricePerKm    Float?   // Transport only: per-kilometer charge
   currency      String   @default("USD")
 
+  mealPlan      String   @default("ROOM_ONLY")  // ROOM_ONLY | BED_AND_BREAKFAST | HALF_BOARD | FULL_BOARD
+  priceBnB      Float?
+  priceHalfBoard Float?
+  priceFullBoard Float?
+  vehicleGroups String?  // JSON: [{ type, count, maxPassengers }]
+
   maxGuests     Int
   bedrooms      Int
   bathrooms     Int
@@ -110,6 +117,11 @@ model Property {
   rooms            Room[]
   roomTypes        RoomType[]
   externalBookings ExternalBooking[]
+  propertyRatings  PropertyRating[]
+
+  @@index([hostId])
+  @@index([status])
+  @@index([district])
 }
 
 model PropertyImage {
@@ -189,6 +201,8 @@ model Room {
   roomType         RoomType?        @relation(fields: [roomTypeId], references: [id])
   bookings         Booking[]
   externalBookings ExternalBooking[]
+
+  @@index([propertyId])
 }
 
 model ExternalBooking {
@@ -206,6 +220,11 @@ model ExternalBooking {
 
   property   Property @relation(fields: [propertyId], references: [id])
   room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([propertyId])
+  @@index([checkIn, checkOut])
+  @@index([status])
 }
 
 model Booking {
@@ -223,6 +242,8 @@ model Booking {
   pickupPoint     String?  // Transport only
   dropPoint       String?  // Transport only
   distanceKm      Float?   // Transport only
+  mealPlan        String   @default("ROOM_ONLY")  // ROOM_ONLY | BED_AND_BREAKFAST | HALF_BOARD | FULL_BOARD
+  roomSelections  String?  // JSON: [{ typeId, typeName, displayLabel, count }]
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -232,6 +253,12 @@ model Booking {
   guest      User     @relation("GuestBookings", fields: [guestId], references: [id])
   offers     Offer[]
   review     Review?
+
+  @@index([propertyId])
+  @@index([guestId])
+  @@index([roomId])
+  @@index([status])
+  @@index([checkIn, checkOut])
 }
 
 model Offer {
@@ -245,6 +272,8 @@ model Offer {
 
   booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   sender    User     @relation("OfferSender", fields: [senderId], references: [id])
+
+  @@index([bookingId])
 }
 
 // ─── REVIEWS ───────────────────────────────────────────────────────────────
@@ -283,4 +312,34 @@ model Notification {
   createdAt DateTime @default(now())
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─── PROPERTY RATINGS ───────────────────────────────────────────────────────
+
+model PropertyRating {
+  id         String   @id @default(cuid())
+  propertyId String
+  bookingId  String?
+  guestId    String?
+  q1         Float    @default(0)
+  q2         Float    @default(0)
+  q3         Float    @default(0)
+  q4         Float    @default(0)
+  q5         Float    @default(0)
+  q6         Float    @default(0)
+  q7         Float    @default(0)
+  q8         Float    @default(0)
+  q9         Float    @default(0)
+  q10        Float    @default(0)
+  avgScore   Float    @default(0)
+  isSeeded   Boolean  @default(false)
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([isSeeded])
 }
