@@ -46,7 +46,7 @@ const AMENITY_ICON_MAP: Record<string, LucideIcon> = {
 
 async function fetchProperty(id: string) {
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-  const res = await fetch(`${baseUrl}/api/properties/${id}`, { cache: "no-store" });
+  const res = await fetch(`${baseUrl}/api/properties/${id}`, { next: { revalidate: 300 } });
   if (!res.ok) return null;
   return res.json();
 }

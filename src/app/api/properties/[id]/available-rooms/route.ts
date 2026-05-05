@@ -35,28 +35,28 @@ export async function GET(
     return NextResponse.json({ availableCount: 0, totalRooms: 0, roomNames: [], roomTypes: null });
   }
 
-  // Check availability for each room
+  // Single bulk query finds all busy rooms — replaces per-room N+1 loop
+  const allRoomIds = rooms.map((r) => r.id);
+  const inClause = allRoomIds.map((_, i) => `$${i + 1}`).join(", ");
+  const o = allRoomIds.length;
+  const busyRows = await prisma.$queryRawUnsafe<{ roomId: string }[]>(
+    `SELECT DISTINCT "roomId" FROM "ExternalBooking"
+     WHERE "roomId" IN (${inClause}) AND status = 'BOOKED'
+       AND "checkIn" < $${o + 1}::timestamptz AND "checkOut" > $${o + 2}::timestamptz
+     UNION
+     SELECT DISTINCT "roomId" FROM "Booking"
+     WHERE "roomId" IN (${inClause}) AND status IN ('ACCEPTED','COMPLETED')
+       AND "checkIn" < $${o + 1}::timestamptz AND "checkOut" > $${o + 2}::timestamptz`,
+    ...allRoomIds, checkOutIso, checkInIso
+  );
+  const busySet = new Set(busyRows.map((r) => r.roomId));
+
   let availableCount = 0;
   const roomNames: string[] = [];
   const availableByTypeId: Record<string, number> = {};
 
   for (const room of rooms) {
-    const extConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "ExternalBooking"
-       WHERE "roomId" = $1 AND status = 'BOOKED'
-         AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
-      room.id, checkOutIso, checkInIso
-    );
-    if (extConflict.length > 0) continue;
-
-    const intConflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "Booking"
-       WHERE "roomId" = $1 AND status IN ('ACCEPTED', 'COMPLETED')
-         AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
-      room.id, checkOutIso, checkInIso
-    );
-    if (intConflict.length > 0) continue;
-
+    if (busySet.has(room.id)) continue;
     availableCount++;
     roomNames.push(room.name);
     if (room.roomTypeId) {

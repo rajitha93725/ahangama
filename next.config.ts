@@ -5,8 +5,9 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "lh3.googleapis.com" },
+      { protocol: "https", hostname: "*.supabase.co" },
+      { protocol: "https", hostname: "flagcdn.com" },
     ],
-    unoptimized: true,
   },
   serverExternalPackages: ["bcryptjs"],
 };

@@ -21,10 +21,37 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Enrich with columns the stale Prisma client doesn't know about
-  const extras = await prisma.$queryRaw<{ category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null; vehicleGroups: string | null }[]>`
-    SELECT category, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard, vehicleGroups FROM "Property" WHERE id = ${id}
-  `;
+  // Run all enrichment queries in parallel — all independent reads for the same id
+  const [extras, prRows, seededFeedback, guestFeedback, roomTypeRows] = await Promise.all([
+    prisma.$queryRaw<{ category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null; vehicleGroups: string | null }[]>`
+      SELECT category, "pricePerKm", "mealPlan", "priceBnB", "priceHalfBoard", "priceFullBoard", "vehicleGroups" FROM "Property" WHERE id = ${id}
+    `,
+    prisma.$queryRawUnsafe<{ avgScore: number }[]>(
+      `SELECT "avgScore" FROM "PropertyRating" WHERE "propertyId" = $1`,
+      id
+    ),
+    prisma.$queryRawUnsafe<{ avgScore: number; createdAt: string; comment: string | null }[]>(
+      `SELECT "avgScore", "createdAt", comment
+       FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true
+       ORDER BY "createdAt" DESC`,
+      id
+    ),
+    prisma.$queryRawUnsafe<{ avgScore: number; createdAt: string; comment: string | null; guestName: string | null; guestImage: string | null }[]>(
+      `SELECT pr."avgScore", pr."createdAt", pr.comment, u.name as "guestName", u.image as "guestImage"
+       FROM "PropertyRating" pr
+       LEFT JOIN "User" u ON u.id = pr."guestId"
+       WHERE pr."propertyId" = $1 AND pr."isSeeded" = false
+       ORDER BY pr."createdAt" DESC`,
+      id
+    ),
+    prisma.$queryRawUnsafe<{ id: string; typeName: string; displayLabel: string; roomCount: number; beds: number; maxGuests: number; bathrooms: number; amenities: string; pricePerNight: number; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }[]>(
+      `SELECT id, "typeName", "displayLabel", "roomCount", beds, "maxGuests", bathrooms, amenities,
+              "pricePerNight", "priceBnB", "priceHalfBoard", "priceFullBoard"
+       FROM "RoomType" WHERE "propertyId" = $1 ORDER BY "createdAt" ASC`,
+      id
+    ),
+  ]);
+
   const { category = "STAY", pricePerKm = null, mealPlan = "ROOM_ONLY", priceBnB = null, priceHalfBoard = null, priceFullBoard = null, vehicleGroups: vehicleGroupsRaw = null } = extras[0] ?? {};
   const vehicleGroups = vehicleGroupsRaw ? JSON.parse(vehicleGroupsRaw) : null;
 
@@ -33,52 +60,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       ? property.reviews.reduce((sum, r) => sum + r.rating, 0) / property.reviews.length
       : null;
 
-  // PropertyRating: average of all avgScore values (includes seeded)
-  const prRows = await prisma.$queryRawUnsafe<{ avgScore: number }[]>(
-    `SELECT "avgScore" FROM "PropertyRating" WHERE "propertyId" = $1`,
-    id
-  );
   const propertyRating =
     prRows.length > 0
       ? parseFloat((prRows.reduce((s, r) => s + Number(r.avgScore), 0) / prRows.length).toFixed(1))
       : null;
   const propertyRatingCount = prRows.length;
-
-  // Seeded feedback rows (isSeeded=1) — default reviews shown first
-  const seededFeedback = await prisma.$queryRawUnsafe<{
-    avgScore: number; createdAt: string; comment: string | null;
-  }[]>(
-    `SELECT "avgScore", "createdAt", comment
-     FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true
-     ORDER BY "createdAt" DESC`,
-    id
-  );
-
-  // Real guest reviews (isSeeded=false) — appended after seeded, newest first
-  const guestFeedback = await prisma.$queryRawUnsafe<{
-    avgScore: number; createdAt: string; comment: string | null;
-    guestName: string | null; guestImage: string | null;
-  }[]>(
-    `SELECT pr."avgScore", pr."createdAt", pr.comment, u.name as "guestName", u.image as "guestImage"
-     FROM "PropertyRating" pr
-     LEFT JOIN "User" u ON u.id = pr."guestId"
-     WHERE pr."propertyId" = $1 AND pr."isSeeded" = false
-     ORDER BY pr."createdAt" DESC`,
-    id
-  );
-
-  // Fetch room types for this property
-  const roomTypeRows = await prisma.$queryRawUnsafe<{
-    id: string; typeName: string; displayLabel: string; roomCount: number;
-    beds: number; maxGuests: number; bathrooms: number; amenities: string;
-    pricePerNight: number; priceBnB: number | null; priceHalfBoard: number | null;
-    priceFullBoard: number | null;
-  }[]>(
-    `SELECT id, "typeName", "displayLabel", "roomCount", beds, "maxGuests", bathrooms, amenities,
-            "pricePerNight", "priceBnB", "priceHalfBoard", "priceFullBoard"
-     FROM "RoomType" WHERE "propertyId" = $1 ORDER BY "createdAt" ASC`,
-    id
-  );
   const roomTypes = roomTypeRows.map((rt) => ({
     ...rt,
     amenities: (() => { try { return JSON.parse(rt.amenities); } catch { return []; } })(),

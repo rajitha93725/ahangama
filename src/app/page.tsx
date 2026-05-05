@@ -8,7 +8,7 @@ import { Search, MapPin, Home, Car } from "lucide-react";
 async function getFeaturedProperties() {
   try {
     const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-    const res = await fetch(`${baseUrl}/api/properties?limit=8`, { cache: "no-store" });
+    const res = await fetch(`${baseUrl}/api/properties?limit=8`, { next: { revalidate: 60 } });
     if (!res.ok) return [];
     const data = await res.json();
     return data.data || [];

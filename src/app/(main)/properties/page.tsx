@@ -19,7 +19,7 @@ async function fetchProperties(params: SearchParams) {
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
   const query = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => { if (v) query.set(k, v); });
-  const res = await fetch(`${baseUrl}/api/properties?${query}`, { cache: "no-store" });
+  const res = await fetch(`${baseUrl}/api/properties?${query}`, { next: { revalidate: 30 } });
   if (!res.ok) return { data: [], total: 0, page: 1, totalPages: 1 };
   return res.json();
 }
