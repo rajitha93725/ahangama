@@ -57,6 +57,25 @@ export const TransportSchema = z.object({
   vehicleGroups: z.array(z.object({ type: z.string(), count: z.number().int().min(1), maxPassengers: z.number().int().min(1).max(70).default(4) })).optional(),
 });
 
+export const RentalSchema = z.object({
+  title: z.string().min(5, "Title must be at least 5 characters").max(100),
+  description: z.string().min(10, "Description must be at least 10 characters").max(2000),
+  propertyType: z.string().min(1),
+  category: z.enum(["BIKE_RENTAL", "SURF_RENTAL"]),
+  address: z.string().min(5, "Please enter a full address (at least 5 characters)"),
+  district: z.string().min(1, "District is required"),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  pricePerNight: z.number().min(1, "Daily rate must be at least $1"),
+  minPrice: z.number().min(1),
+  maxGuests: z.number().int().min(1).max(200),
+  bedrooms: z.number().int().min(0).max(0).default(0),
+  bathrooms: z.number().int().min(0).max(0).default(0),
+  beds: z.number().int().min(0).max(0).default(0),
+  amenities: z.array(z.string()).optional(),
+  vehicleGroups: z.array(z.object({ type: z.string(), count: z.number().int().min(1), maxPassengers: z.number().int().min(1).max(10).default(1) })).optional(),
+});
+
 export const SearchSchema = z.object({
   district: z.string().optional(),
   minPrice: z.number().optional(),
@@ -110,6 +129,7 @@ export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type PropertyInput = z.infer<typeof PropertySchema>;
 export type TransportInput = z.infer<typeof TransportSchema>;
+export type RentalInput = z.infer<typeof RentalSchema>;
 export type SearchInput = z.infer<typeof SearchSchema>;
 export type BookingRequestInput = z.infer<typeof BookingRequestSchema>;
 export type OfferInput = z.infer<typeof OfferSchema>;

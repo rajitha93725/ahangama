@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Star, Users, BedDouble, Navigation, Car, CircleDot } from "lucide-react";
+import { MapPin, Star, Users, BedDouble, Navigation, Car, CircleDot, Bike, Waves } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useLKRRate } from "@/hooks/useLKRRate";
 import { ratingToStars } from "@/lib/ratingQuestions";
@@ -39,6 +39,10 @@ export default function PropertyCard({
   const displayRating = propertyRating ?? avgRating;
   const starCount = propertyRating != null ? ratingToStars(propertyRating) : null;
   const isTransport = category === "TRANSPORT";
+  const isBike = category === "BIKE_RENTAL";
+  const isSurf = category === "SURF_RENTAL";
+  const isRental = isBike || isSurf;
+  const isInventory = isTransport || isRental;
 
   return (
     <Link href={`/properties/${id}`} className="group/card block">
@@ -56,7 +60,7 @@ export default function PropertyCard({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <span className="text-4xl opacity-30">{isTransport ? "🚗" : "🏠"}</span>
+              <span className="text-4xl opacity-30">{isTransport ? "🚗" : isBike ? "🚲" : isSurf ? "🏄" : "🏠"}</span>
             </div>
           )}
           <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-medium text-gray-700">
@@ -65,6 +69,16 @@ export default function PropertyCard({
           {isTransport && (
             <div className="absolute top-3 right-3 bg-amber-500/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-medium text-white">
               Transport
+            </div>
+          )}
+          {isBike && (
+            <div className="absolute top-3 right-3 bg-violet-500/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-medium text-white flex items-center gap-1">
+              <Bike className="w-3 h-3" /> Bike Rental
+            </div>
+          )}
+          {isSurf && (
+            <div className="absolute top-3 right-3 bg-cyan-500/90 backdrop-blur-sm px-2 py-1 rounded-full text-xs font-medium text-white flex items-center gap-1">
+              <Waves className="w-3 h-3" /> Surf Gear
             </div>
           )}
         </div>
@@ -117,8 +131,10 @@ export default function PropertyCard({
 
           {/* Stats */}
           <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
-            <span className="flex items-center gap-1"><Users className="w-3 h-3" />{maxGuests} {isTransport ? "passengers" : "guests"}</span>
-            {!isTransport && <span className="flex items-center gap-1"><BedDouble className="w-3 h-3" />{bedrooms} bed{bedrooms !== 1 ? "s" : ""}</span>}
+            <span className="flex items-center gap-1">
+              <Users className="w-3 h-3" />{maxGuests} {isTransport ? "passengers" : isBike ? "riders" : isSurf ? "surfers" : "guests"}
+            </span>
+            {!isInventory && <span className="flex items-center gap-1"><BedDouble className="w-3 h-3" />{bedrooms} bed{bedrooms !== 1 ? "s" : ""}</span>}
           </div>
 
           {/* Tonight availability */}
@@ -126,12 +142,12 @@ export default function PropertyCard({
             availableRoomsTonight > 0 ? (
               <div className="flex items-center gap-1 text-xs font-medium text-green-600 mb-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block flex-shrink-0 animate-pulse" />
-                {availableRoomsTonight} {isTransport ? "vehicle" : "room"}{availableRoomsTonight !== 1 ? "s" : ""} free {isTransport ? "today" : "tonight"}
+                {availableRoomsTonight} {isTransport ? "vehicle" : isBike ? "bike" : isSurf ? "board" : "room"}{availableRoomsTonight !== 1 ? "s" : ""} free {isInventory ? "today" : "tonight"}
               </div>
             ) : (
               <div className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block flex-shrink-0" />
-                Fully booked {isTransport ? "today" : "tonight"}
+                Fully booked {isInventory ? "today" : "tonight"}
               </div>
             )
           )}
@@ -144,7 +160,15 @@ export default function PropertyCard({
           {/* Price + Negotiable */}
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
-              {isTransport ? (
+              {isRental ? (
+                <>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-base font-bold text-gray-900">{formatCurrency(pricePerNight)}</span>
+                    <span className="text-xs text-gray-500">/day</span>
+                  </div>
+                  {lkrPrice !== null && <p className="text-xs text-gray-400">≈ LKR {lkrPrice.toLocaleString()}/day</p>}
+                </>
+              ) : isTransport ? (
                 <>
                   {(pricePerKm ?? 0) > 0 && (
                     <div className="flex items-center gap-1 text-sm flex-wrap">

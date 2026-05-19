@@ -22,10 +22,12 @@ interface Props {
     guests?: string;
     propertyType?: string;
     sortBy?: string;
+    category?: string;
   };
+  activeCategory?: string;
 }
 
-export default function PropertyFilters({ districts, currentFilters }: Props) {
+export default function PropertyFilters({ districts, currentFilters, activeCategory }: Props) {
   const router = useRouter();
   const lkrRate = useLKRRate();
   const [district, setDistrict] = useState(currentFilters.district || "");
@@ -43,6 +45,7 @@ export default function PropertyFilters({ districts, currentFilters }: Props) {
     if (guests) params.set("guests", guests);
     if (propertyType) params.set("propertyType", propertyType);
     if (sortBy && sortBy !== "newest") params.set("sortBy", sortBy);
+    if (activeCategory) params.set("category", activeCategory);
     router.push(`/properties?${params}`);
   };
 
@@ -96,7 +99,9 @@ export default function PropertyFilters({ districts, currentFilters }: Props) {
 
       {/* Price range */}
       <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">Price per night (USD)</label>
+        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+          {activeCategory === "BIKE_RENTAL" || activeCategory === "SURF_RENTAL" ? "Price per day (USD)" : "Price per night (USD)"}
+        </label>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <input
@@ -140,18 +145,20 @@ export default function PropertyFilters({ districts, currentFilters }: Props) {
         />
       </div>
 
-      {/* Property type */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1.5">Property Type</label>
-        <select
-          value={propertyType}
-          onChange={(e) => setPropertyType(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-        >
-          <option value="">All types</option>
-          {PROPERTY_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-      </div>
+      {/* Property type — only relevant for stays */}
+      {(!activeCategory || activeCategory === "STAY") && (
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Property Type</label>
+          <select
+            value={propertyType}
+            onChange={(e) => setPropertyType(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+          >
+            <option value="">All types</option>
+            {PROPERTY_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+        </div>
+      )}
 
       <button
         onClick={applyFilters}

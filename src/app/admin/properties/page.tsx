@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Home, Car, Star, ChevronLeft, ChevronRight, User, MessageSquare } from "lucide-react";
+import { Search, Home, Car, Bike, Waves, Star, ChevronLeft, ChevronRight, User, MessageSquare } from "lucide-react";
 import { STAY_QUESTIONS, TRANSPORT_QUESTIONS, ratingToStars } from "@/lib/ratingQuestions";
 import StarRating from "@/components/shared/StarRating";
 import ConfirmDialog, { ConfirmVariant } from "@/components/admin/ConfirmDialog";
@@ -260,12 +260,20 @@ export default function AdminPropertiesPage() {
                     <p className="text-gray-400">{p.host.email}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${p.category === "TRANSPORT" ? "bg-amber-100 text-amber-700" : "bg-teal-100 text-teal-700"}`}>
-                      {p.category === "TRANSPORT" ? <Car className="w-3 h-3" /> : <Home className="w-3 h-3" />}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                      p.category === "TRANSPORT" ? "bg-amber-100 text-amber-700" :
+                      p.category === "BIKE_RENTAL" ? "bg-violet-100 text-violet-700" :
+                      p.category === "SURF_RENTAL" ? "bg-cyan-100 text-cyan-700" :
+                      "bg-teal-100 text-teal-700"
+                    }`}>
+                      {p.category === "TRANSPORT" ? <Car className="w-3 h-3" /> :
+                       p.category === "BIKE_RENTAL" ? <Bike className="w-3 h-3" /> :
+                       p.category === "SURF_RENTAL" ? <Waves className="w-3 h-3" /> :
+                       <Home className="w-3 h-3" />}
                       {p.category}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">${p.pricePerNight}/night</td>
+                  <td className="px-4 py-3 text-gray-700">${p.pricePerNight}/{p.category === "BIKE_RENTAL" || p.category === "SURF_RENTAL" ? "day" : p.category === "TRANSPORT" ? "km" : "night"}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[p.status] || "bg-gray-100 text-gray-600"}`}>
                       {p.status === "PENDING_APPROVAL" ? "Pending" : p.status}

@@ -114,6 +114,9 @@ export default function EditPropertyPage() {
         priceFullBoard: toNum(priceFullBoard),
       };
       if (property?.category === "TRANSPORT") body.pricePerKm = toNum(pricePerKm);
+      if (property?.category === "BIKE_RENTAL" || property?.category === "SURF_RENTAL") {
+        delete body.priceBnB; delete body.priceHalfBoard; delete body.priceFullBoard;
+      }
 
       const res = await fetch(`/api/properties/${id}`, {
         method: "PATCH",
@@ -192,6 +195,8 @@ export default function EditPropertyPage() {
   if (!property) return <div className="max-w-2xl mx-auto px-4 py-16 text-center text-gray-500">Property not found.</div>;
 
   const isTransport = property.category === "TRANSPORT";
+  const isRental = property.category === "BIKE_RENTAL" || property.category === "SURF_RENTAL";
+  const isInventory = isTransport || isRental;
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 space-y-6">
@@ -268,16 +273,16 @@ export default function EditPropertyPage() {
       {/* ── Pricing ── */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-          {isTransport ? "Transport Pricing" : "Room Only Rate"}
+          {isTransport ? "Transport Pricing" : isRental ? "Daily Rate" : "Room Only Rate"}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <PriceField
-              label={isTransport ? "Parking / Night" : "Room Only / Night"}
+              label={isTransport ? "Parking / Night" : isRental ? "Daily Rate" : "Room Only / Night"}
               value={pricePerNight} onChange={setPricePerNight}
               min={0} required lkrRate={lkrRate}
             />
-            {!isTransport && typeof pricePerNight === "number" && pricePerNight > 0 && (
+            {!isInventory && typeof pricePerNight === "number" && pricePerNight > 0 && (
               <p className="text-xs text-teal-600 mt-1">
                 Minimum guests can offer: ${Math.round(pricePerNight * 0.8)}/night (80%)
               </p>
@@ -292,7 +297,7 @@ export default function EditPropertyPage() {
           )}
         </div>
 
-        {!isTransport && (
+        {!isInventory && (
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
               Meal Plan Rates <span className="font-normal normal-case text-gray-400">(leave blank to hide from guests)</span>

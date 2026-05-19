@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
-import { PropertySchema, TransportSchema } from "@/lib/validations";
+import { PropertySchema, TransportSchema, RentalSchema } from "@/lib/validations";
 import { randomUUID } from "crypto";
 
 export async function GET(req: NextRequest) {
@@ -143,7 +143,9 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const isTransport = body.category === "TRANSPORT";
-    const schema = isTransport ? TransportSchema : PropertySchema;
+    const isRental = body.category === "BIKE_RENTAL" || body.category === "SURF_RENTAL";
+    const isInventory = isTransport || isRental;
+    const schema = isTransport ? TransportSchema : isRental ? RentalSchema : PropertySchema;
     const result = schema.safeParse(body);
     if (!result.success) {
       return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
@@ -206,20 +208,25 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from("PropertyAmenity").insert(amenities.map((name) => ({ propertyId: property.id, name })));
     }
 
-    if (isTransport && vehicleGroups?.length) {
+    if (isInventory && vehicleGroups?.length) {
       const VEHICLE_SHORT: Record<string, string> = {
         CAR: "Car", VAN: "Van", TUK_TUK: "Tuk-Tuk", BUS: "Bus",
         BOAT: "Boat", MOTORBIKE: "Bike", JEEP: "Jeep", BICYCLE: "Bicycle",
+        ELECTRIC_BIKE: "E-Bike", MOUNTAIN_BIKE: "MTB", ROAD_BIKE: "Road Bike",
+        SCOOTER: "Scooter",
+        SURFBOARD_BEGINNER: "Beginner Board", SURFBOARD_INTERMEDIATE: "Int Board",
+        SURFBOARD_LONGBOARD: "Longboard", SURFBOARD_SHORTBOARD: "Shortboard",
+        BODYBOARD: "Bodyboard", SUP_BOARD: "SUP", WETSUIT: "Wetsuit",
       };
       const roomData: { propertyId: string; name: string; maxGuests: number; isActive: boolean }[] = [];
       for (const group of vehicleGroups) {
         const name = VEHICLE_SHORT[group.type] ?? group.type;
         for (let i = 1; i <= group.count; i++) {
-          roomData.push({ propertyId: property.id, name: `${name} ${i}`, maxGuests: group.maxPassengers ?? 4, isActive: true });
+          roomData.push({ propertyId: property.id, name: `${name} ${i}`, maxGuests: group.maxPassengers ?? 1, isActive: true });
         }
       }
       if (roomData.length) await supabaseAdmin.from("Room").insert(roomData.map((r) => ({ id: randomUUID(), ...r })));
-    } else if (!isTransport && roomTypesInput?.length) {
+    } else if (!isInventory && roomTypesInput?.length) {
       for (const rt of roomTypesInput) {
         const { data: roomType, error: roomTypeError } = await supabaseAdmin
           .from("RoomType")
@@ -256,7 +263,7 @@ export async function POST(req: NextRequest) {
           }))
         );
       }
-    } else if (!isTransport) {
+    } else if (!isInventory) {
       const bedroomCount = (d.bedrooms as number) || 0;
       if (bedroomCount > 0) {
         await supabaseAdmin.from("Room").insert(

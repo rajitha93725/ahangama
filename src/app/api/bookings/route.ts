@@ -128,8 +128,10 @@ export async function POST(req: NextRequest) {
     }
 
     const isTransport = property.category === "TRANSPORT";
+    const isRental = property.category === "BIKE_RENTAL" || property.category === "SURF_RENTAL";
+    const isInventory = isTransport || isRental;
 
-    if (nights < 0 || (nights === 0 && !isTransport)) {
+    if (nights < 0 || (nights === 0 && !isInventory)) {
       return NextResponse.json({ error: "Invalid dates" }, { status: 400 });
     }
     if (isTransport && (!pickupPoint || !dropPoint)) {
@@ -139,9 +141,11 @@ export async function POST(req: NextRequest) {
     const parkingNote = nights > 0 ? ` (${nights} night${nights !== 1 ? "s" : ""} parking)` : "";
     const notifMsg = isTransport
       ? `${session.user.name || "A guest"} sent an offer of $${offerAmount} for ${distanceKm ?? "?"} km trip${parkingNote}`
+      : isRental
+      ? `${session.user.name || "A guest"} sent an offer of $${offerAmount}/day for ${nights} day${nights !== 1 ? "s" : ""}`
       : `${session.user.name || "A guest"} sent an offer of $${offerAmount}/night for ${nights} nights`;
 
-    const finalMealPlan = isTransport ? "ROOM_ONLY" : rawMealPlan;
+    const finalMealPlan = isInventory ? "ROOM_ONLY" : rawMealPlan;
     const finalRoomSelections = roomSelections?.length ? JSON.stringify(roomSelections) : null;
 
     const { data: booking } = await supabaseAdmin
@@ -172,7 +176,7 @@ export async function POST(req: NextRequest) {
       type: "INITIAL_OFFER",
     });
 
-    if (isTransport && vehicleType) {
+    if (isInventory && vehicleType) {
       const { data: vehicleRooms } = await supabaseAdmin
         .from("Room")
         .select("id")

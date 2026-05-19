@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Users, Home, Car, Clock } from "lucide-react";
+import { Users, Home, Car, Bike, Waves, Clock } from "lucide-react";
 import ConfirmDialog, { ConfirmVariant } from "@/components/admin/ConfirmDialog";
 
 type PendingUser = {
@@ -232,16 +232,25 @@ export default function AdminApprovalsPage() {
               {pendingProperties.map((p) => (
                 <div key={p.id} className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${p.category === "TRANSPORT" ? "bg-amber-100" : "bg-teal-100"}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      p.category === "TRANSPORT" ? "bg-amber-100" :
+                      p.category === "BIKE_RENTAL" ? "bg-violet-100" :
+                      p.category === "SURF_RENTAL" ? "bg-cyan-100" :
+                      "bg-teal-100"
+                    }`}>
                       {p.category === "TRANSPORT" ? (
                         <Car className="w-5 h-5 text-amber-600" />
+                      ) : p.category === "BIKE_RENTAL" ? (
+                        <Bike className="w-5 h-5 text-violet-600" />
+                      ) : p.category === "SURF_RENTAL" ? (
+                        <Waves className="w-5 h-5 text-cyan-600" />
                       ) : (
                         <Home className="w-5 h-5 text-teal-600" />
                       )}
                     </div>
                     <div>
                       <p className="font-semibold text-gray-900">{p.title}</p>
-                      <p className="text-sm text-gray-500">{p.district} · ${p.pricePerNight}/night</p>
+                      <p className="text-sm text-gray-500">{p.district} · ${p.pricePerNight}/{p.category === "BIKE_RENTAL" || p.category === "SURF_RENTAL" ? "day" : p.category === "TRANSPORT" ? "km" : "night"}</p>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-xs text-gray-400">by {p.host.name || p.host.email}</span>
                         {p.host.phone && (

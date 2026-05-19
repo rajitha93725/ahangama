@@ -26,7 +26,7 @@ async function autoAssignRoom(
         .select("bedrooms, category")
         .eq("id", propertyId)
         .single();
-      const isStay = prop?.category !== "TRANSPORT";
+      const isStay = prop?.category === "STAY";
       const bedroomCount = prop?.bedrooms ?? 0;
       if (isStay && bedroomCount > 0) {
         await supabaseAdmin.from("Room").insert(

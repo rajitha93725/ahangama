@@ -13,7 +13,7 @@ export async function POST(_req: NextRequest) {
     .from("Property")
     .select("id, title, bedrooms")
     .eq("hostId", session.user.id)
-    .neq("category", "TRANSPORT")
+    .eq("category", "STAY")
     .gt("bedrooms", 0);
 
   if (!properties?.length) return NextResponse.json({ created: 0, provisioned: [] });

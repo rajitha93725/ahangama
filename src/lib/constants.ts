@@ -68,11 +68,37 @@ export const TRANSPORT_TYPES = [
   { value: "BICYCLE", label: "Bicycle" },
 ] as const;
 
-// Short singular names for vehicle room labels (e.g. "Van 1", "Car 2")
+export const BIKE_RENTAL_TYPES = [
+  { value: "BICYCLE", label: "Bicycle" },
+  { value: "ELECTRIC_BIKE", label: "Electric Bike" },
+  { value: "MOUNTAIN_BIKE", label: "Mountain Bike" },
+  { value: "ROAD_BIKE", label: "Road Bike" },
+  { value: "SCOOTER", label: "Scooter" },
+  { value: "MOTORBIKE", label: "Motorbike" },
+] as const;
+
+export const SURF_RENTAL_TYPES = [
+  { value: "SURFBOARD_BEGINNER", label: "Beginner Board" },
+  { value: "SURFBOARD_INTERMEDIATE", label: "Intermediate Board" },
+  { value: "SURFBOARD_LONGBOARD", label: "Longboard" },
+  { value: "SURFBOARD_SHORTBOARD", label: "Shortboard" },
+  { value: "BODYBOARD", label: "Bodyboard" },
+  { value: "SUP_BOARD", label: "Stand Up Paddle Board" },
+  { value: "WETSUIT", label: "Wetsuit" },
+] as const;
+
+// Short singular names for inventory room labels
 export const VEHICLE_SHORT_NAMES: Record<string, string> = {
   CAR: "Car", VAN: "Van", TUK_TUK: "Tuk-Tuk", BUS: "Bus",
   BOAT: "Boat", MOTORBIKE: "Bike", JEEP: "Jeep", BICYCLE: "Bicycle",
+  ELECTRIC_BIKE: "E-Bike", MOUNTAIN_BIKE: "MTB", ROAD_BIKE: "Road Bike", SCOOTER: "Scooter",
+  SURFBOARD_BEGINNER: "Beginner Board", SURFBOARD_INTERMEDIATE: "Int. Board",
+  SURFBOARD_LONGBOARD: "Longboard", SURFBOARD_SHORTBOARD: "Shortboard",
+  BODYBOARD: "Bodyboard", SUP_BOARD: "SUP Board", WETSUIT: "Wetsuit",
 };
+
+export const INVENTORY_CATEGORIES = ["TRANSPORT", "BIKE_RENTAL", "SURF_RENTAL"] as const;
+export type InventoryCategory = (typeof INVENTORY_CATEGORIES)[number];
 
 export const MEAL_PLANS = [
   { value: "ROOM_ONLY", label: "Room Only", short: "RO", color: "bg-gray-100 text-gray-600" },

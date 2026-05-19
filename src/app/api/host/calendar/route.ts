@@ -216,7 +216,7 @@ export async function GET(req: NextRequest) {
       id: property.id,
       title: property.title,
       district: property.district,
-      isTransport: property.category === "TRANSPORT",
+      isTransport: property.category !== "STAY",
       rooms: roomEntries,
       unassignedBookings: unassigned,
       totalRooms: rooms.length,
