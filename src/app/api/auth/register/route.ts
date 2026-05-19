@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
+import { randomUUID } from "crypto";
+import { supabaseAdmin } from "@/lib/supabase";
 import { RegisterSchema } from "@/lib/validations";
 
 export async function POST(req: NextRequest) {
@@ -13,21 +14,27 @@ export async function POST(req: NextRequest) {
 
     const { name, email, password, role, phone } = result.data;
 
-    const existingEmail = await prisma.user.findUnique({ where: { email } });
+    const { data: existingEmail } = await supabaseAdmin.from("User").select("id").eq("email", email).maybeSingle();
     if (existingEmail) {
       return NextResponse.json({ error: "Email already registered" }, { status: 409 });
     }
 
-    const existingPhone = await prisma.user.findFirst({ where: { phone } });
+    const { data: existingPhone } = await supabaseAdmin.from("User").select("id").eq("phone", phone).maybeSingle();
     if (existingPhone) {
       return NextResponse.json({ error: "Phone number already registered" }, { status: 409 });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: { name, email, passwordHash, role, isActive: false, phone },
-      select: { id: true, name: true, email: true, role: true },
-    });
+    const { data: user, error: insertError } = await supabaseAdmin
+      .from("User")
+      .insert({ id: randomUUID(), name, email, passwordHash, role, isActive: false, phone, updatedAt: new Date().toISOString() })
+      .select("id, name, email, role")
+      .single();
+
+    if (insertError || !user) {
+      console.error("[POST /api/auth/register] Insert failed:", insertError);
+      return NextResponse.json({ error: "Failed to create account. Please try again." }, { status: 500 });
+    }
 
     return NextResponse.json({ ...user, pendingApproval: true }, { status: 201 });
   } catch (err) {

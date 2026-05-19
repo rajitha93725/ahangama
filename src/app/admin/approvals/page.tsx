@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Users, Home, Car, Clock } from "lucide-react";
+import ConfirmDialog, { ConfirmVariant } from "@/components/admin/ConfirmDialog";
 
 type PendingUser = {
   id: string;
@@ -26,12 +28,22 @@ type PendingProperty = {
 
 type PendingItem = PendingUser | PendingProperty;
 
+type ConfirmState = {
+  variant: ConfirmVariant;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+};
+
 export default function AdminApprovalsPage() {
+  const router = useRouter();
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [pendingProperties, setPendingProperties] = useState<PendingProperty[]>([]);
   const [loading, setLoading] = useState(true);
   const [actioning, setActioning] = useState<string | null>(null);
   const [tab, setTab] = useState<"all" | "users" | "properties">("all");
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const fetchPending = useCallback(async () => {
     setLoading(true);
@@ -53,26 +65,56 @@ export default function AdminApprovalsPage() {
 
   useEffect(() => { fetchPending(); }, [fetchPending]);
 
-  const handleUserAction = async (userId: string, action: string) => {
+  const runUserAction = async (userId: string, action: string) => {
     setActioning(userId);
+    setConfirm(null);
     await fetch(`/api/admin/users/${userId}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
     await fetchPending();
+    router.refresh();
     setActioning(null);
   };
 
-  const handlePropertyAction = async (propertyId: string, action: string) => {
+  const runPropertyAction = async (propertyId: string, action: string) => {
     setActioning(propertyId);
+    setConfirm(null);
     await fetch(`/api/admin/properties/${propertyId}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
     await fetchPending();
+    router.refresh();
     setActioning(null);
+  };
+
+  const confirmUserAction = (u: PendingUser, action: "approve" | "deactivate") => {
+    const isApprove = action === "approve";
+    setConfirm({
+      variant: isApprove ? "approve" : "reject",
+      title: isApprove ? "Approve Account" : "Reject Registration",
+      message: isApprove
+        ? `Allow ${u.name || u.email} to access Visit Sri Lanka as a ${u.role.toLowerCase()}.`
+        : `Decline the registration request from ${u.name || u.email}. They will not be able to log in.`,
+      confirmLabel: isApprove ? "Yes, Approve" : "Yes, Reject",
+      onConfirm: () => runUserAction(u.id, action),
+    });
+  };
+
+  const confirmPropertyAction = (p: PendingProperty, action: "approve" | "reject") => {
+    const isApprove = action === "approve";
+    setConfirm({
+      variant: isApprove ? "approve" : "reject",
+      title: isApprove ? "Approve Listing" : "Reject Listing",
+      message: isApprove
+        ? `Publish "${p.title}" by ${p.host.name || p.host.email}. It will be visible to guests immediately.`
+        : `Decline "${p.title}" by ${p.host.name || p.host.email}. The host will need to resubmit.`,
+      confirmLabel: isApprove ? "Yes, Approve" : "Yes, Reject",
+      onConfirm: () => runPropertyAction(p.id, action),
+    });
   };
 
   const totalPending = pendingUsers.length + pendingProperties.length;
@@ -89,6 +131,17 @@ export default function AdminApprovalsPage() {
 
   return (
     <div className="p-8">
+      <ConfirmDialog
+        open={!!confirm}
+        variant={confirm?.variant ?? "approve"}
+        title={confirm?.title ?? ""}
+        message={confirm?.message ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        loading={!!actioning}
+        onConfirm={() => confirm?.onConfirm()}
+        onCancel={() => { if (!actioning) setConfirm(null); }}
+      />
+
       <div className="flex items-center gap-3 mb-2">
         <Clock className="w-6 h-6 text-orange-500" />
         <h1 className="text-2xl font-bold text-gray-900">Pending Approvals</h1>
@@ -154,14 +207,14 @@ export default function AdminApprovalsPage() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
-                      onClick={() => handleUserAction(u.id, "approve")}
+                      onClick={() => confirmUserAction(u, "approve")}
                       disabled={actioning === u.id}
                       className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
                     >
-                      Approve
+                      {actioning === u.id ? "…" : "Approve"}
                     </button>
                     <button
-                      onClick={() => handleUserAction(u.id, "deactivate")}
+                      onClick={() => confirmUserAction(u, "deactivate")}
                       disabled={actioning === u.id}
                       className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
                     >
@@ -203,14 +256,14 @@ export default function AdminApprovalsPage() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
-                      onClick={() => handlePropertyAction(p.id, "approve")}
+                      onClick={() => confirmPropertyAction(p, "approve")}
                       disabled={actioning === p.id}
                       className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
                     >
-                      Approve
+                      {actioning === p.id ? "…" : "Approve"}
                     </button>
                     <button
-                      onClick={() => handlePropertyAction(p.id, "reject")}
+                      onClick={() => confirmPropertyAction(p, "reject")}
                       disabled={actioning === p.id}
                       className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
                     >

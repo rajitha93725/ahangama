@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { randomUUID } from "crypto";
 
 const VALID_SOURCES = ["BOOKING_COM", "AIRBNB", "AGODA", "WALK_ON", "OTHER"];
 
-// POST /api/host/external-bookings — create an external booking
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session || (session.user.role !== "HOST" && session.user.role !== "ADMIN")) {
@@ -31,63 +30,61 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "checkOut must be after checkIn" }, { status: 400 });
   }
 
-  // Verify the room belongs to this host
-  const roomRows = await prisma.$queryRawUnsafe<{ id: string; propertyId: string }[]>(
-    `SELECT r.id, r."propertyId" FROM "Room" r
-     INNER JOIN "Property" p ON p.id = r."propertyId"
-     WHERE r.id = $1 AND p."hostId" = $2 AND r."isActive" = true`,
-    roomId,
-    session.user.id
-  );
-  if (!roomRows.length) {
-    return NextResponse.json({ error: "Room not found" }, { status: 404 });
-  }
-  const { propertyId } = roomRows[0];
+  const { data: hostProperties } = await supabaseAdmin.from("Property").select("id").eq("hostId", session.user.id);
+  const hostPropertyIds = (hostProperties || []).map((p: { id: string }) => p.id);
+
+  const { data: room } = await supabaseAdmin
+    .from("Room")
+    .select("id, propertyId")
+    .eq("id", roomId)
+    .eq("isActive", true)
+    .in("propertyId", hostPropertyIds)
+    .maybeSingle();
+  if (!room) return NextResponse.json({ error: "Room not found" }, { status: 404 });
 
   const checkInIso = checkInDate.toISOString();
   const checkOutIso = checkOutDate.toISOString();
 
-  // Double-booking check: existing EXTERNAL bookings that overlap
-  const conflictExt = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM "ExternalBooking"
-     WHERE "roomId" = $1 AND status = 'BOOKED'
-       AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
-    roomId,
-    checkOutIso,
-    checkInIso
-  );
-  if (conflictExt.length) {
+  const { data: conflictExt } = await supabaseAdmin
+    .from("ExternalBooking")
+    .select("id")
+    .eq("roomId", roomId)
+    .eq("status", "BOOKED")
+    .lt("checkIn", checkOutIso)
+    .gt("checkOut", checkInIso)
+    .maybeSingle();
+  if (conflictExt) {
     return NextResponse.json({ error: "Room already has an external booking for this period" }, { status: 409 });
   }
 
-  // Double-booking check: existing INTERNAL bookings that overlap (for rooms with roomId set)
-  const conflictInt = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM "Booking"
-     WHERE "roomId" = $1 AND status IN ('ACCEPTED', 'COMPLETED')
-       AND "checkIn" < $2::timestamptz AND "checkOut" > $3::timestamptz`,
-    roomId,
-    checkOutIso,
-    checkInIso
-  );
-  if (conflictInt.length) {
+  const { data: conflictInt } = await supabaseAdmin
+    .from("Booking")
+    .select("id")
+    .eq("roomId", roomId)
+    .in("status", ["ACCEPTED", "COMPLETED"])
+    .lt("checkIn", checkOutIso)
+    .gt("checkOut", checkInIso)
+    .maybeSingle();
+  if (conflictInt) {
     return NextResponse.json({ error: "Room already has an internal booking for this period" }, { status: 409 });
   }
 
-  const id = randomUUID();
-
-  await prisma.$queryRawUnsafe(
-    `INSERT INTO "ExternalBooking" (id, "propertyId", "roomId", "checkIn", "checkOut", source, "guestName", notes, status, "createdAt", "updatedAt")
-     VALUES ($1, $2, $3, $4::timestamp, $5::timestamp, $6, $7, $8, 'BOOKED', NOW(), NOW())`,
-    id, propertyId, roomId, checkInIso, checkOutIso, source, guestName ?? null, notes ?? null
-  );
-
-  const [booking] = await prisma.$queryRawUnsafe<{
-    id: string; propertyId: string; roomId: string; checkIn: string; checkOut: string;
-    source: string; guestName: string | null; notes: string | null; status: string; createdAt: string;
-  }[]>(
-    `SELECT * FROM "ExternalBooking" WHERE id = $1`,
-    id
-  );
+  const { data: booking } = await supabaseAdmin
+    .from("ExternalBooking")
+    .insert({
+      id: randomUUID(),
+      propertyId: room.propertyId,
+      roomId,
+      checkIn: checkInIso,
+      checkOut: checkOutIso,
+      source,
+      guestName: guestName ?? null,
+      notes: notes ?? null,
+      status: "BOOKED",
+      updatedAt: new Date().toISOString(),
+    })
+    .select()
+    .single();
 
   return NextResponse.json(booking, { status: 201 });
 }

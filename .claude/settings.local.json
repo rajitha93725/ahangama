@@ -35,7 +35,12 @@
       "PowerShell(cd C:\\\\AutomationDI\\\\TryOuts\\\\ahangama; node -e \"const { PrismaClient } = require\\('@prisma/client'\\); const p = new PrismaClient\\(\\); console.log\\('Client OK'\\); p.$disconnect\\(\\);\" 2>&1)",
       "PowerShell(cd C:\\\\AutomationDI\\\\TryOuts\\\\ahangama; Get-Content node_modules\\\\@prisma\\\\client\\\\runtime\\\\library.d.ts | Select-Object -First 5 2>&1; Write-Host \"---\"; \\(Get-Content node_modules\\\\.prisma\\\\client\\\\schema.prisma -ErrorAction SilentlyContinue | Select-String \"provider\"\\) 2>&1)",
       "Bash(Get-ChildItem -Path \"C:\\\\AutomationDI\\\\TryOuts\\\\ahangama\\\\src\\\\app\\\\\\(main\\)\" -Name)",
-      "Bash(Sort-Object)"
+      "Bash(Sort-Object)",
+      "Bash(tasklist)",
+      "Bash(findstr -i \"node\\\\|next\\\\|prisma\")",
+      "PowerShell(Get-Process *)",
+      "Bash(Remove-Item -Path \"C:\\\\AutomationDI\\\\TryOuts\\\\ahangama\\\\src\\\\lib\\\\prisma.ts\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(Write-Host \"prisma.ts deleted\")"
     ]
   }
 }

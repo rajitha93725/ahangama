@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function POST(
   req: NextRequest,
@@ -12,7 +12,7 @@ export async function POST(
   }
 
   const { id } = await params;
-  const { action } = await req.json(); // "activate" | "deactivate" | "approve"
+  const { action } = await req.json();
 
   if (!["activate", "deactivate", "approve"].includes(action)) {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
@@ -20,11 +20,12 @@ export async function POST(
 
   const isActive = action === "activate" || action === "approve";
 
-  const user = await prisma.user.update({
-    where: { id },
-    data: { isActive },
-    select: { id: true, name: true, email: true, role: true, isActive: true },
-  });
+  const { data: user } = await supabaseAdmin
+    .from("User")
+    .update({ isActive, updatedAt: new Date().toISOString() })
+    .eq("id", id)
+    .select("id, name, email, role, isActive")
+    .single();
 
   return NextResponse.json(user);
 }

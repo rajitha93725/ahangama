@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import NegotiationThread from "@/components/booking/NegotiationThread";
 import { useBookingSocket } from "@/hooks/useSocket";
 import type { OfferPayload, BookingStatusPayload } from "@/types/socket";
@@ -20,14 +21,16 @@ interface Props {
   initialOffers: Offer[];
   initialStatus: string;
   nights: number;
+  checkIn: string;
   isGuest: boolean;
   isHost: boolean;
   currentUserId: string;
 }
 
 export default function BookingDetailClient({
-  bookingId, initialOffers, initialStatus, nights, isGuest, isHost, currentUserId,
+  bookingId, initialOffers, initialStatus, nights, checkIn, isGuest, isHost, currentUserId,
 }: Props) {
+  const router = useRouter();
   const [offers, setOffers] = useState<Offer[]>(initialOffers);
   const [status, setStatus] = useState(initialStatus);
 
@@ -49,6 +52,7 @@ export default function BookingDetailClient({
     },
     "booking:status": (payload: BookingStatusPayload) => {
       setStatus(payload.status);
+      if (payload.status === "ACCEPTED") router.refresh();
     },
   });
 
@@ -58,6 +62,7 @@ export default function BookingDetailClient({
       offers={offers}
       status={status}
       nights={nights}
+      checkIn={checkIn}
       isGuest={isGuest}
       isHost={isHost}
       currentUserId={currentUserId}
@@ -70,7 +75,10 @@ export default function BookingDetailClient({
           }];
         });
       }}
-      onStatusChange={(newStatus) => setStatus(newStatus)}
+      onStatusChange={(newStatus) => {
+        setStatus(newStatus);
+        if (newStatus === "ACCEPTED") router.refresh();
+      }}
     />
   );
 }

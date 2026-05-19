@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -13,32 +13,34 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get("search");
   const activeParam = searchParams.get("active");
 
-  const where: Record<string, unknown> = { role: { not: "ADMIN" } };
-  if (role) where.role = role;
-  if (activeParam === "false") where.isActive = false;
-  if (search) {
-    where.OR = [
-      { name: { contains: search } },
-      { email: { contains: search } },
-    ];
-  }
+  let query = supabaseAdmin
+    .from("User")
+    .select("id, name, email, role, isActive, createdAt, phone")
+    .neq("role", "ADMIN")
+    .order("createdAt", { ascending: false });
 
-  const users = await prisma.user.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-      phone: true,
-      _count: {
-        select: { properties: true, bookingsAsGuest: true },
-      },
-    },
-  });
+  if (role) query = query.eq("role", role);
+  if (activeParam === "false") query = query.eq("isActive", false);
+  if (search) query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%`);
 
-  return NextResponse.json(users);
+  const { data: users } = await query;
+  if (!users?.length) return NextResponse.json([]);
+
+  const userIds = users.map((u: { id: string }) => u.id);
+  const [{ data: properties }, { data: bookings }] = await Promise.all([
+    supabaseAdmin.from("Property").select("hostId").in("hostId", userIds),
+    supabaseAdmin.from("Booking").select("guestId").in("guestId", userIds),
+  ]);
+
+  const propCount: Record<string, number> = {};
+  (properties || []).forEach((p: { hostId: string }) => { propCount[p.hostId] = (propCount[p.hostId] || 0) + 1; });
+  const bookingCount: Record<string, number> = {};
+  (bookings || []).forEach((b: { guestId: string }) => { bookingCount[b.guestId] = (bookingCount[b.guestId] || 0) + 1; });
+
+  return NextResponse.json(
+    users.map((u: { id: string; [key: string]: unknown }) => ({
+      ...u,
+      _count: { properties: propCount[u.id] || 0, bookingsAsGuest: bookingCount[u.id] || 0 },
+    }))
+  );
 }

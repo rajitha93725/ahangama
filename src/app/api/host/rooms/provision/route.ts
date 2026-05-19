@@ -1,71 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { randomUUID } from "crypto";
 
-// POST /api/host/rooms/provision
-// Idempotently creates default rooms (Room 1, Room 2, …) for all STAY properties
-// that have a bedrooms count > 0 but currently have 0 rooms in the Room table.
-// Safe to call on every calendar load — does nothing for properties that already have rooms.
 export async function POST(_req: NextRequest) {
   const session = await auth();
   if (!session || (session.user.role !== "HOST" && session.user.role !== "ADMIN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const properties = await prisma.property.findMany({
-    where: { hostId: session.user.id },
-    select: { id: true, title: true, bedrooms: true },
-  });
+  const { data: properties } = await supabaseAdmin
+    .from("Property")
+    .select("id, title, bedrooms")
+    .eq("hostId", session.user.id)
+    .neq("category", "TRANSPORT")
+    .gt("bedrooms", 0);
 
-  if (properties.length === 0) {
-    return NextResponse.json({ created: 0, provisioned: [] });
-  }
+  if (!properties?.length) return NextResponse.json({ created: 0, provisioned: [] });
 
-  const propertyIds = properties.map((p) => p.id);
-  const inClause = propertyIds.map((_, i) => `$${i + 1}`).join(", ");
+  const propertyIds = properties.map((p: { id: string }) => p.id);
+  const { data: existingRooms } = await supabaseAdmin
+    .from("Room")
+    .select("propertyId")
+    .in("propertyId", propertyIds)
+    .eq("isActive", true);
 
-  // Bulk: categories for all properties in one query
-  const catRows = await prisma.$queryRawUnsafe<{ id: string; category: string }[]>(
-    `SELECT id, category FROM "Property" WHERE id IN (${inClause})`,
-    ...propertyIds
+  const propertiesWithRooms = new Set((existingRooms || []).map((r: { propertyId: string }) => r.propertyId));
+  const toProvision = (properties as { id: string; title: string; bedrooms: number }[]).filter(
+    (p) => !propertiesWithRooms.has(p.id)
   );
-  const categoryMap = Object.fromEntries(catRows.map((r) => [r.id, r.category]));
 
-  // Bulk: existing active room counts for all properties in one query
-  const countRows = await prisma.$queryRawUnsafe<{ propertyId: string; cnt: bigint }[]>(
-    `SELECT "propertyId", COUNT(*) as cnt FROM "Room"
-     WHERE "propertyId" IN (${inClause}) AND "isActive" = true
-     GROUP BY "propertyId"`,
-    ...propertyIds
-  );
-  const roomCountMap = Object.fromEntries(countRows.map((r) => [r.propertyId, Number(r.cnt)]));
-
-  // Build a single batch INSERT for all properties that need rooms
   let totalCreated = 0;
   const provisioned: { propertyId: string; title: string; roomsCreated: number }[] = [];
-  const allRows: unknown[] = [];
-  const allPlaceholders: string[] = [];
-  let p = 1;
 
-  for (const property of properties) {
-    if (!property.bedrooms || property.bedrooms <= 0) continue;
-    if (categoryMap[property.id] === "TRANSPORT") continue;
-    if ((roomCountMap[property.id] ?? 0) > 0) continue;
-
-    for (let i = 1; i <= property.bedrooms; i++) {
-      allRows.push(randomUUID(), property.id, `Room ${i}`);
-      allPlaceholders.push(`($${p++}, $${p++}, $${p++}, 2, true, NOW())`);
-    }
-    totalCreated += property.bedrooms;
-    provisioned.push({ propertyId: property.id, title: property.title, roomsCreated: property.bedrooms });
-  }
-
-  if (allRows.length > 0) {
-    await prisma.$queryRawUnsafe(
-      `INSERT INTO "Room" (id, "propertyId", name, "maxGuests", "isActive", "createdAt") VALUES ${allPlaceholders.join(", ")}`,
-      ...allRows
+  for (const property of toProvision) {
+    const count = property.bedrooms ?? 0;
+    if (count <= 0) continue;
+    await supabaseAdmin.from("Room").insert(
+      Array.from({ length: count }, (_, i) => ({
+        id: randomUUID(),
+        propertyId: property.id,
+        name: `Room ${i + 1}`,
+        maxGuests: 2,
+        isActive: true,
+      }))
     );
+    totalCreated += count;
+    provisioned.push({ propertyId: property.id, title: property.title, roomsCreated: count });
   }
 
   return NextResponse.json({ created: totalCreated, provisioned });

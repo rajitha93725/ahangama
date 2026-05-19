@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
   const session = await auth();
@@ -8,18 +8,21 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
-  const [guestCount, hostCount, pendingUsers, pendingProperties, confirmedBookings] = await Promise.all([
-    prisma.user.count({ where: { role: "GUEST" } }),
-    prisma.user.count({ where: { role: "HOST" } }),
-    prisma.user.count({ where: { isActive: false, role: { not: "ADMIN" } } }),
-    prisma.property.count({ where: { status: "PENDING_APPROVAL" } }),
-    prisma.booking.findMany({
-      where: { status: { in: ["ACCEPTED", "COMPLETED"] } },
-      select: { totalPrice: true },
-    }),
+  const [
+    { count: guestCount },
+    { count: hostCount },
+    { count: pendingUsers },
+    { count: pendingProperties },
+    { data: confirmedBookings },
+  ] = await Promise.all([
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }).eq("role", "GUEST"),
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }).eq("role", "HOST"),
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }).eq("isActive", false).neq("role", "ADMIN"),
+    supabaseAdmin.from("Property").select("*", { count: "exact", head: true }).eq("status", "PENDING_APPROVAL"),
+    supabaseAdmin.from("Booking").select("totalPrice").in("status", ["ACCEPTED", "COMPLETED"]),
   ]);
 
-  const revenue = confirmedBookings.reduce((s, b) => s + (b.totalPrice || 0), 0);
+  const revenue = (confirmedBookings || []).reduce((s: number, b: { totalPrice: number | null }) => s + (b.totalPrice || 0), 0);
 
   return NextResponse.json({ guestCount, hostCount, pendingUsers, pendingProperties, revenue });
 }

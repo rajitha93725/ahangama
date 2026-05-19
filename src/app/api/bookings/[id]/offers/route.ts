@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { OfferSchema } from "@/lib/validations";
 import { randomUUID } from "crypto";
 
-// ─── Auto Room Assignment ─────────────────────────────────────────────────────
-// Called when a booking reaches ACCEPTED status.
-// 1. Ensures the property has rooms (provisions Room 1…N from bedrooms count if none exist).
-// 2. Single bulk query finds all busy room IDs for the date range.
-// 3. Assigns up to `roomsRequested` free rooms:
-//    - Primary room → set roomId on the Booking row (shows green in calendar).
-//    - Extra rooms  → blocked via ExternalBooking rows so the calendar reflects occupancy.
-// Non-fatal: errors are logged but never block the booking confirmation.
 async function autoAssignRoom(
   bookingId: string,
   propertyId: string,
@@ -22,115 +14,126 @@ async function autoAssignRoom(
     const checkInIso = checkIn.toISOString();
     const checkOutIso = checkOut.toISOString();
 
-    // 1. Provision rooms if the property currently has none (batch INSERT)
-    const countRow = await prisma.$queryRawUnsafe<{ cnt: bigint }[]>(
-      `SELECT COUNT(*) as cnt FROM "Room" WHERE "propertyId" = $1 AND "isActive" = true`,
-      propertyId
-    );
-    const existingCount = Number(countRow[0]?.cnt ?? 0);
+    const { count: existingCount } = await supabaseAdmin
+      .from("Room")
+      .select("*", { count: "exact", head: true })
+      .eq("propertyId", propertyId)
+      .eq("isActive", true);
 
-    if (existingCount === 0) {
-      const propRow = await prisma.$queryRawUnsafe<{ bedrooms: number; category: string }[]>(
-        `SELECT bedrooms, category FROM "Property" WHERE id = $1`, propertyId
-      );
-      const isStay = propRow[0]?.category !== "TRANSPORT";
-      const bedroomCount = propRow[0]?.bedrooms ?? 0;
+    if (!existingCount) {
+      const { data: prop } = await supabaseAdmin
+        .from("Property")
+        .select("bedrooms, category")
+        .eq("id", propertyId)
+        .single();
+      const isStay = prop?.category !== "TRANSPORT";
+      const bedroomCount = prop?.bedrooms ?? 0;
       if (isStay && bedroomCount > 0) {
-        const bRows: unknown[] = [];
-        const bPlaceholders: string[] = [];
-        let bp = 1;
-        for (let i = 1; i <= bedroomCount; i++) {
-          bRows.push(randomUUID(), propertyId, `Room ${i}`);
-          bPlaceholders.push(`($${bp++}, $${bp++}, $${bp++}, 2, true, NOW())`);
-        }
-        await prisma.$queryRawUnsafe(
-          `INSERT INTO "Room" (id, "propertyId", name, "maxGuests", "isActive", "createdAt") VALUES ${bPlaceholders.join(", ")}`,
-          ...bRows
+        await supabaseAdmin.from("Room").insert(
+          Array.from({ length: bedroomCount }, (_, i) => ({
+            id: randomUUID(), propertyId, name: `Room ${i + 1}`, maxGuests: 2, isActive: true,
+          }))
         );
       }
     }
 
-    // 2. Load booking info: guest name + room selections (typed breakdown)
-    const bookingRow = await prisma.$queryRawUnsafe<{
-      roomsRequested: number; guestName: string | null; roomSelections: string | null;
-    }[]>(
-      `SELECT b."roomsRequested", u.name as "guestName", b."roomSelections"
-       FROM "Booking" b INNER JOIN "User" u ON u.id = b."guestId"
-       WHERE b.id = $1`,
-      bookingId
-    );
-    const requested = Number(bookingRow[0]?.roomsRequested ?? 1);
-    const guestName = bookingRow[0]?.guestName ?? "Visit Sri Lanka booking";
-    const roomSelectionsJson = bookingRow[0]?.roomSelections;
+    const { data: bookingRow } = await supabaseAdmin
+      .from("Booking")
+      .select("roomsRequested, roomSelections, guestId")
+      .eq("id", bookingId)
+      .single();
+
+    const requested = bookingRow?.roomsRequested ?? 1;
+    const { data: guestUser } = await supabaseAdmin.from("User").select("name").eq("id", bookingRow?.guestId).single();
+    const guestName = guestUser?.name ?? "Visit Sri Lanka booking";
+    const roomSelectionsJson = bookingRow?.roomSelections;
     const roomSelections: Array<{ typeId: string; count: number }> | null =
-      roomSelectionsJson ? (() => { try { return JSON.parse(roomSelectionsJson); } catch { return null; } })() : null;
+      roomSelectionsJson ? (() => { try { return JSON.parse(roomSelectionsJson as string); } catch { return null; } })() : null;
 
-    // 3. Load all active rooms + find busy ones with a single UNION query
-    const allRooms = await prisma.$queryRawUnsafe<{ id: string; roomTypeId: string | null }[]>(
-      `SELECT id, "roomTypeId" FROM "Room" WHERE "propertyId" = $1 AND "isActive" = true ORDER BY "createdAt" ASC`,
-      propertyId
-    );
-    if (allRooms.length === 0) return;
+    const { data: allRooms } = await supabaseAdmin
+      .from("Room")
+      .select("id, roomTypeId")
+      .eq("propertyId", propertyId)
+      .eq("isActive", true)
+      .order("createdAt");
 
-    const allRoomIds = allRooms.map((r) => r.id);
-    const inClause = allRoomIds.map((_, i) => `$${i + 1}`).join(", ");
-    const o = allRoomIds.length; // offset for subsequent params
-    const busyRows = await prisma.$queryRawUnsafe<{ roomId: string }[]>(
-      `SELECT DISTINCT "roomId" FROM "ExternalBooking"
-       WHERE "roomId" IN (${inClause}) AND status = 'BOOKED'
-         AND "checkIn" < $${o + 1}::timestamptz AND "checkOut" > $${o + 2}::timestamptz
-       UNION
-       SELECT DISTINCT "roomId" FROM "Booking"
-       WHERE "roomId" IN (${inClause}) AND id != $${o + 3} AND status IN ('ACCEPTED','COMPLETED')
-         AND "checkIn" < $${o + 1}::timestamptz AND "checkOut" > $${o + 2}::timestamptz`,
-      ...allRoomIds, checkOutIso, checkInIso, bookingId
-    );
-    const busySet = new Set(busyRows.map((r) => r.roomId));
+    if (!allRooms?.length) return;
 
-    // 4a. TYPED assignment — guest specified room types via roomSelections
+    const allRoomIds = allRooms.map((r: { id: string }) => r.id);
+
+    // Replace UNION with two parallel queries
+    const [{ data: extBusy }, { data: intBusy }] = await Promise.all([
+      supabaseAdmin
+        .from("ExternalBooking")
+        .select("roomId")
+        .in("roomId", allRoomIds)
+        .eq("status", "BOOKED")
+        .lt("checkIn", checkOutIso)
+        .gt("checkOut", checkInIso),
+      supabaseAdmin
+        .from("Booking")
+        .select("roomId")
+        .in("roomId", allRoomIds)
+        .neq("id", bookingId)
+        .in("status", ["ACCEPTED", "COMPLETED"])
+        .lt("checkIn", checkOutIso)
+        .gt("checkOut", checkInIso),
+    ]);
+
+    const busySet = new Set([
+      ...(extBusy || []).map((r: { roomId: string }) => r.roomId),
+      ...(intBusy || []).filter((r: { roomId: string | null }) => r.roomId).map((r: { roomId: string }) => r.roomId),
+    ]);
+
     if (roomSelections && roomSelections.length > 0) {
       let primaryRoomId: string | null = null;
       const extraRoomIds: string[] = [];
 
       for (const sel of roomSelections) {
-        const typeRooms = allRooms.filter((r) => r.roomTypeId === sel.typeId && !busySet.has(r.id));
+        const typeRooms = (allRooms as { id: string; roomTypeId: string | null }[]).filter(
+          (r) => r.roomTypeId === sel.typeId && !busySet.has(r.id)
+        );
         let assigned = 0;
         for (const room of typeRooms) {
           if (assigned >= sel.count) break;
-          if (!primaryRoomId) {
-            primaryRoomId = room.id;
-          } else {
-            extraRoomIds.push(room.id);
-          }
+          if (!primaryRoomId) primaryRoomId = room.id;
+          else extraRoomIds.push(room.id);
           assigned++;
         }
       }
 
       if (!primaryRoomId) return;
-      await prisma.$executeRaw`UPDATE "Booking" SET "roomId" = ${primaryRoomId} WHERE id = ${bookingId}`;
-      for (const roomId of extraRoomIds) {
-        await prisma.$queryRawUnsafe(
-          `INSERT INTO "ExternalBooking" (id, "propertyId", "roomId", "checkIn", "checkOut", source, "guestName", notes, status, "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4::timestamp, $5::timestamp, 'AHANGAMA', $6, $7, 'BOOKED', NOW(), NOW())`,
-          randomUUID(), propertyId, roomId, checkInIso, checkOutIso,
-          guestName, `Linked to booking ${bookingId} (multi-room)`
+      await supabaseAdmin.from("Booking").update({ roomId: primaryRoomId, updatedAt: new Date().toISOString() }).eq("id", bookingId);
+      if (extraRoomIds.length > 0) {
+        await supabaseAdmin.from("ExternalBooking").insert(
+          extraRoomIds.map((roomId) => ({
+            id: randomUUID(), propertyId, roomId,
+            checkIn: checkInIso, checkOut: checkOutIso,
+            source: "AHANGAMA", guestName,
+            notes: `Linked to booking ${bookingId} (multi-room)`,
+            status: "BOOKED",
+            updatedAt: new Date().toISOString(),
+          }))
         );
       }
       return;
     }
 
-    // 4b. UNTYPED fallback — assign first N free rooms
-    const freeRooms = allRooms.filter((r) => !busySet.has(r.id));
-    if (freeRooms.length === 0) return;
+    const freeRooms = (allRooms as { id: string; roomTypeId: string | null }[]).filter((r) => !busySet.has(r.id));
+    if (!freeRooms.length) return;
 
     const toAssign = freeRooms.slice(0, requested);
-    await prisma.$executeRaw`UPDATE "Booking" SET "roomId" = ${toAssign[0].id} WHERE id = ${bookingId}`;
-    for (let i = 1; i < toAssign.length; i++) {
-      await prisma.$queryRawUnsafe(
-        `INSERT INTO "ExternalBooking" (id, "propertyId", "roomId", "checkIn", "checkOut", source, "guestName", notes, status, "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4::timestamp, $5::timestamp, 'AHANGAMA', $6, $7, 'BOOKED', NOW(), NOW())`,
-        randomUUID(), propertyId, toAssign[i].id, checkInIso, checkOutIso,
-        guestName, `Linked to booking ${bookingId} (multi-room)`
+    await supabaseAdmin.from("Booking").update({ roomId: toAssign[0].id, updatedAt: new Date().toISOString() }).eq("id", bookingId);
+    if (toAssign.length > 1) {
+      await supabaseAdmin.from("ExternalBooking").insert(
+        toAssign.slice(1).map((room) => ({
+          id: randomUUID(), propertyId, roomId: room.id,
+          checkIn: checkInIso, checkOut: checkOutIso,
+          source: "OTHER", guestName,
+          notes: `Linked to booking ${bookingId} (multi-room)`,
+          status: "BOOKED",
+          updatedAt: new Date().toISOString(),
+        }))
       );
     }
   } catch (err) {
@@ -140,7 +143,7 @@ async function autoAssignRoom(
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   PENDING_OFFER: ["COUNTERED", "ACCEPTED", "REJECTED"],
-  COUNTERED: ["PENDING_OFFER", "ACCEPTED", "REJECTED"],
+  COUNTERED: ["COUNTERED", "ACCEPTED", "REJECTED"],
 };
 
 function getNewStatus(currentStatus: string, offerType: string): string {
@@ -155,25 +158,35 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const booking = await prisma.booking.findUnique({
-    where: { id },
-    include: { property: { select: { hostId: true } } },
-  });
+  const { data: booking } = await supabaseAdmin.from("Booking").select("guestId, propertyId").eq("id", id).maybeSingle();
   if (!booking) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const { data: property } = await supabaseAdmin.from("Property").select("hostId").eq("id", booking.propertyId).single();
+  if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const isOwner =
     booking.guestId === session.user.id ||
-    booking.property.hostId === session.user.id ||
+    property.hostId === session.user.id ||
     session.user.role === "ADMIN";
   if (!isOwner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const offers = await prisma.offer.findMany({
-    where: { bookingId: id },
-    include: { sender: { select: { id: true, name: true, image: true, role: true } } },
-    orderBy: { createdAt: "asc" },
-  });
+  const { data: offers } = await supabaseAdmin
+    .from("Offer")
+    .select("*")
+    .eq("bookingId", id)
+    .order("createdAt");
 
-  return NextResponse.json(offers);
+  if (!offers?.length) return NextResponse.json([]);
+
+  const senderIds = [...new Set(offers.map((o: { senderId: string }) => o.senderId))];
+  const { data: senders } = await supabaseAdmin.from("User").select("id, name, image, role").in("id", senderIds);
+  const senderMap = Object.fromEntries((senders || []).map((s: { id: string; [key: string]: unknown }) => [s.id, s]));
+
+  return NextResponse.json(
+    offers.map((o: { senderId: string; [key: string]: unknown }) => ({
+      ...o,
+      sender: senderMap[o.senderId] ?? { id: o.senderId, name: null, image: null, role: null },
+    }))
+  );
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -181,14 +194,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const booking = await prisma.booking.findUnique({
-    where: { id },
-    include: { property: { select: { hostId: true, title: true } } },
-  });
+  const { data: booking } = await supabaseAdmin.from("Booking").select("*").eq("id", id).maybeSingle();
   if (!booking) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const { data: property } = await supabaseAdmin.from("Property").select("hostId, title").eq("id", booking.propertyId).single();
+  if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const isGuest = booking.guestId === session.user.id;
-  const isHost = booking.property.hostId === session.user.id;
+  const isHost = property.hostId === session.user.id;
   if (!isGuest && !isHost) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   if (!["PENDING_OFFER", "COUNTERED"].includes(booking.status)) {
@@ -206,100 +219,63 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Invalid status transition" }, { status: 400 });
   }
 
-  // For acceptance: must match the last offer exactly and cannot accept your own offer
   if (type === "ACCEPTANCE") {
-    const lastOffer = await prisma.offer.findFirst({
-      where: { bookingId: id },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!lastOffer) {
-      return NextResponse.json({ error: "No offer to accept" }, { status: 400 });
-    }
-    if (lastOffer.senderId === session.user.id) {
-      return NextResponse.json({ error: "Cannot accept your own offer" }, { status: 403 });
-    }
-    if (Math.abs(amount - lastOffer.amount) > 0.01) {
-      return NextResponse.json({ error: "Acceptance amount must match the current offer" }, { status: 400 });
-    }
+    const { data: lastOffer } = await supabaseAdmin
+      .from("Offer")
+      .select("*")
+      .eq("bookingId", id)
+      .order("createdAt", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!lastOffer) return NextResponse.json({ error: "No offer to accept" }, { status: 400 });
+    if (lastOffer.senderId === session.user.id) return NextResponse.json({ error: "Cannot accept your own offer" }, { status: 403 });
+    if (Math.abs(amount - lastOffer.amount) > 0.01) return NextResponse.json({ error: "Acceptance amount must match the current offer" }, { status: 400 });
   }
 
-  // Amount stored is the total (not per-night), so totalPrice = amount directly
   const totalPrice = type === "ACCEPTANCE" ? amount : undefined;
 
-  const [offer] = await prisma.$transaction([
-    prisma.offer.create({
-      data: { bookingId: id, senderId: session.user.id, amount, message, type },
-      include: { sender: { select: { id: true, name: true, image: true, role: true } } },
-    }),
-    prisma.booking.update({
-      where: { id },
-      data: { status: newStatus, ...(totalPrice ? { totalPrice } : {}) },
-    }),
-  ]);
+  const { data: offer } = await supabaseAdmin
+    .from("Offer")
+    .insert({ id: randomUUID(), bookingId: id, senderId: session.user.id, amount, message, type })
+    .select()
+    .single();
 
-  // Auto-assign a room in the booking calendar when booking is confirmed
+  await supabaseAdmin
+    .from("Booking")
+    .update({ status: newStatus, updatedAt: new Date().toISOString(), ...(totalPrice ? { totalPrice } : {}) })
+    .eq("id", id);
+
+  const { data: sender } = await supabaseAdmin.from("User").select("id, name, image, role").eq("id", session.user.id).single();
+
   if (type === "ACCEPTANCE") {
-    await autoAssignRoom(id, booking.propertyId, booking.checkIn, booking.checkOut);
+    await autoAssignRoom(id, booking.propertyId, new Date(booking.checkIn), new Date(booking.checkOut));
   }
 
-  // Notify the other party
-  const recipientId = isGuest ? booking.property.hostId : booking.guestId;
-  const notifType =
-    type === "ACCEPTANCE"
-      ? "BOOKING_ACCEPTED"
-      : type === "REJECTION"
-      ? "BOOKING_REJECTED"
-      : "COUNTER_OFFER";
-  const notifTitle =
-    type === "ACCEPTANCE"
-      ? "Booking Confirmed!"
-      : type === "REJECTION"
-      ? "Offer Declined"
-      : "Counter Offer Received";
+  const recipientId = isGuest ? property.hostId : booking.guestId;
+  const notifType = type === "ACCEPTANCE" ? "BOOKING_ACCEPTED" : type === "REJECTION" ? "BOOKING_REJECTED" : "COUNTER_OFFER";
+  const notifTitle = type === "ACCEPTANCE" ? "Booking Confirmed!" : type === "REJECTION" ? "Offer Declined" : "Counter Offer Received";
   const notifMessage =
-    type === "ACCEPTANCE"
-      ? `Your booking for ${booking.property.title} is confirmed at $${amount}/night`
-      : type === "REJECTION"
-      ? `Your offer for ${booking.property.title} was declined`
-      : `Counter offer of $${amount}/night received for ${booking.property.title}`;
+    type === "ACCEPTANCE" ? `Your booking for ${property.title} is confirmed at $${amount}/night` :
+    type === "REJECTION" ? `Your offer for ${property.title} was declined` :
+    `Counter offer of $${amount}/night received for ${property.title}`;
 
-  await prisma.notification.create({
-    data: {
-      userId: recipientId,
-      type: notifType,
-      title: notifTitle,
-      message: notifMessage,
-      data: JSON.stringify({ bookingId: id }),
-    },
+  await supabaseAdmin.from("Notification").insert({
+    id: randomUUID(), userId: recipientId, type: notifType, title: notifTitle, message: notifMessage,
+    data: JSON.stringify({ bookingId: id }),
   });
 
-  // Emit socket event (if global io is set)
   const globalAny = global as { io?: { to: (room: string) => { emit: (event: string, data: unknown) => void } } };
   if (globalAny.io) {
     globalAny.io.to(`booking:${id}`).emit("offer:new", {
-      id: offer.id,
-      bookingId: id,
-      senderId: session.user.id,
-      senderName: offer.sender.name || "Unknown",
-      amount,
-      message,
-      type,
-      createdAt: offer.createdAt.toISOString(),
+      id: offer.id, bookingId: id, senderId: session.user.id,
+      senderName: sender?.name || "Unknown", amount, message, type, createdAt: offer.createdAt,
     });
-    globalAny.io.to(`booking:${id}`).emit("booking:status", {
-      bookingId: id,
-      status: newStatus,
-      totalPrice,
-    });
+    globalAny.io.to(`booking:${id}`).emit("booking:status", { bookingId: id, status: newStatus, totalPrice });
     globalAny.io.to(`user:${recipientId}`).emit("notification:new", {
-      id: crypto.randomUUID(),
-      type: notifType,
-      title: notifTitle,
-      message: notifMessage,
-      data: JSON.stringify({ bookingId: id }),
-      createdAt: new Date().toISOString(),
+      id: crypto.randomUUID(), type: notifType, title: notifTitle, message: notifMessage,
+      data: JSON.stringify({ bookingId: id }), createdAt: new Date().toISOString(),
     });
   }
 
-  return NextResponse.json(offer, { status: 201 });
+  return NextResponse.json({ ...offer, sender }, { status: 201 });
 }

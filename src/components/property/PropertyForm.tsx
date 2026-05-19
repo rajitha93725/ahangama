@@ -2,9 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { PROPERTY_TYPES, AMENITIES, SRI_LANKA_DISTRICTS, ROOM_TYPES } from "@/lib/constants";
 import { useLKRRate } from "@/hooks/useLKRRate";
 import { Upload, X, Plus, Trash2, MapPin } from "lucide-react";
+
+const LocationPicker = dynamic(() => import("@/components/property/LocationPicker"), {
+  ssr: false,
+  loading: () => <div className="w-full h-[220px] rounded-xl bg-gray-100 animate-pulse" />,
+});
 
 const DISTRICT_COORDS: Record<string, [number, number]> = {
   Colombo: [6.9271, 79.8612],
@@ -74,6 +80,7 @@ export default function PropertyForm() {
   const [locationQuery, setLocationQuery] = useState("");
   const [locationSearching, setLocationSearching] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const [locationCenterKey, setLocationCenterKey] = useState(0);
 
   const [form, setForm] = useState({
     title: "",
@@ -100,6 +107,7 @@ export default function PropertyForm() {
         const [lat, lng] = DISTRICT_COORDS[value as string];
         next.latitude = lat;
         next.longitude = lng;
+        setLocationCenterKey((k) => k + 1);
       }
       return next;
     });
@@ -171,6 +179,7 @@ export default function PropertyForm() {
       }
       const { lat, lon } = results[0];
       setForm((prev) => ({ ...prev, latitude: parseFloat(lat), longitude: parseFloat(lon) }));
+      setLocationCenterKey((k) => k + 1);
     } catch {
       setLocationError("Search failed. Please try again.");
     } finally {
@@ -271,8 +280,6 @@ export default function PropertyForm() {
     }
   };
 
-  const mapSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${form.longitude - 0.03},${form.latitude - 0.03},${form.longitude + 0.03},${form.latitude + 0.03}&layer=mapnik&marker=${form.latitude},${form.longitude}`;
-
   return (
     <div className="space-y-8">
       {/* Steps indicator */}
@@ -350,12 +357,12 @@ export default function PropertyForm() {
             />
           </div>
 
-          {/* Map location search + preview */}
+          {/* Map location search + draggable pin */}
           <div>
             <div className="flex items-center gap-2 mb-2">
               <MapPin className="w-4 h-4 text-teal-600" />
               <label className="text-sm font-medium text-gray-700">Location</label>
-              <span className="text-xs text-gray-400">{form.latitude.toFixed(4)}, {form.longitude.toFixed(4)}</span>
+              <span className="text-xs text-gray-400">{form.latitude.toFixed(5)}, {form.longitude.toFixed(5)}</span>
             </div>
             <div className="flex gap-2 mb-2">
               <input
@@ -375,17 +382,16 @@ export default function PropertyForm() {
               </button>
             </div>
             {locationError && <p className="text-xs text-red-500 mb-2">{locationError}</p>}
-            <div className="rounded-xl overflow-hidden border border-gray-200">
-              <iframe
-                key={`${form.latitude}-${form.longitude}`}
-                src={mapSrc}
-                className="w-full h-52"
-                loading="lazy"
-                title="Property location map"
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <LocationPicker
+                lat={form.latitude}
+                lng={form.longitude}
+                centerKey={locationCenterKey}
+                onChange={(lat, lng) => setForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
               />
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Select your district above to set a rough location, then search for your exact address.
+              Drag the pin to set your exact location. Zoom in for better precision.
             </p>
           </div>
         </div>

@@ -2,17 +2,17 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { LayoutDashboard, Users, Home, CalendarCheck, MapPin, Clock } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session || session.user.role !== "ADMIN") redirect("/");
 
-  const [pendingUsers, pendingProperties] = await Promise.all([
-    prisma.user.count({ where: { isActive: false, role: { not: "ADMIN" } } }),
-    prisma.property.count({ where: { status: "PENDING_APPROVAL" } }),
+  const [{ count: pendingUsers }, { count: pendingProperties }] = await Promise.all([
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }).eq("isActive", false).neq("role", "ADMIN"),
+    supabaseAdmin.from("Property").select("*", { count: "exact", head: true }).eq("status", "PENDING_APPROVAL"),
   ]);
-  const pendingCount = pendingUsers + pendingProperties;
+  const pendingCount = (pendingUsers || 0) + (pendingProperties || 0);
 
   return (
     <div className="min-h-screen flex">

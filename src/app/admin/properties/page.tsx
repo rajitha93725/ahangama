@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Search, Home, Car, Star, ChevronLeft, ChevronRight, User, MessageSquare } from "lucide-react";
 import { STAY_QUESTIONS, TRANSPORT_QUESTIONS, ratingToStars } from "@/lib/ratingQuestions";
 import StarRating from "@/components/shared/StarRating";
+import ConfirmDialog, { ConfirmVariant } from "@/components/admin/ConfirmDialog";
 
 type Property = {
   id: string;
@@ -28,6 +30,14 @@ type RatingModalState = {
   selectedGuest: number;   // 0–9
 };
 
+type ConfirmState = {
+  variant: ConfirmVariant;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+};
+
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: "bg-green-100 text-green-700",
   PENDING_APPROVAL: "bg-orange-100 text-orange-700",
@@ -43,6 +53,7 @@ const scoreColor = (v: number) =>
   v >= 9 ? "text-emerald-600" : v >= 7 ? "text-teal-600" : v >= 5 ? "text-amber-500" : "text-red-500";
 
 export default function AdminPropertiesPage() {
+  const router = useRouter();
   const [properties, setProperties] = useState<Property[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -56,6 +67,7 @@ export default function AdminPropertiesPage() {
   const [ratingLoading, setRatingLoading] = useState(false);
   const [ratingSaving, setRatingSaving] = useState(false);
   const [ratingSaved, setRatingSaved] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const fetchProperties = useCallback(async () => {
     setLoading(true);
@@ -76,15 +88,52 @@ export default function AdminPropertiesPage() {
   useEffect(() => { fetchProperties(); }, [fetchProperties]);
   useEffect(() => { setPage(1); }, [search, statusFilter]);
 
-  const handleAction = async (propertyId: string, action: string) => {
+  const runAction = async (propertyId: string, action: string) => {
     setActioning(propertyId);
+    setConfirm(null);
     await fetch(`/api/admin/properties/${propertyId}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
     await fetchProperties();
+    router.refresh();
     setActioning(null);
+  };
+
+  const confirmAction = (p: Property, action: "approve" | "reject" | "activate" | "deactivate") => {
+    const hostLabel = p.host.name || p.host.email;
+    const configs: Record<typeof action, ConfirmState> = {
+      approve: {
+        variant: "approve",
+        title: "Approve Listing",
+        message: `Publish "${p.title}" by ${hostLabel}. It will be visible to guests immediately.`,
+        confirmLabel: "Yes, Approve",
+        onConfirm: () => runAction(p.id, "approve"),
+      },
+      reject: {
+        variant: "reject",
+        title: "Reject Listing",
+        message: `Decline "${p.title}" by ${hostLabel}. The host will need to resubmit.`,
+        confirmLabel: "Yes, Reject",
+        onConfirm: () => runAction(p.id, "reject"),
+      },
+      activate: {
+        variant: "activate",
+        title: "Activate Listing",
+        message: `Make "${p.title}" visible to guests again.`,
+        confirmLabel: "Yes, Activate",
+        onConfirm: () => runAction(p.id, "activate"),
+      },
+      deactivate: {
+        variant: "deactivate",
+        title: "Deactivate Listing",
+        message: `Hide "${p.title}" from guests. The host can reactivate it at any time.`,
+        confirmLabel: "Yes, Deactivate",
+        onConfirm: () => runAction(p.id, "deactivate"),
+      },
+    };
+    setConfirm(configs[action]);
   };
 
   const openRatingModal = async (property: Property) => {
@@ -138,6 +187,17 @@ export default function AdminPropertiesPage() {
 
   return (
     <div className="p-8">
+      <ConfirmDialog
+        open={!!confirm}
+        variant={confirm?.variant ?? "approve"}
+        title={confirm?.title ?? ""}
+        message={confirm?.message ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        loading={!!actioning}
+        onConfirm={() => confirm?.onConfirm()}
+        onCancel={() => { if (!actioning) setConfirm(null); }}
+      />
+
       {ratingSaved && (
         <div className="fixed top-5 right-5 z-50 bg-teal-600 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg flex items-center gap-2">
           <Star className="w-4 h-4 fill-white text-white" />
@@ -215,24 +275,24 @@ export default function AdminPropertiesPage() {
                     <div className="flex items-center justify-end gap-2 flex-wrap">
                       {p.status === "PENDING_APPROVAL" && (
                         <>
-                          <button onClick={() => handleAction(p.id, "approve")} disabled={actioning === p.id}
+                          <button onClick={() => confirmAction(p, "approve")} disabled={actioning === p.id}
                             className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50 transition-colors">
                             Approve
                           </button>
-                          <button onClick={() => handleAction(p.id, "reject")} disabled={actioning === p.id}
+                          <button onClick={() => confirmAction(p, "reject")} disabled={actioning === p.id}
                             className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50 transition-colors">
                             Reject
                           </button>
                         </>
                       )}
                       {p.status === "ACTIVE" && (
-                        <button onClick={() => handleAction(p.id, "deactivate")} disabled={actioning === p.id}
+                        <button onClick={() => confirmAction(p, "deactivate")} disabled={actioning === p.id}
                           className="px-3 py-1.5 bg-gray-50 text-gray-600 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-100 disabled:opacity-50 transition-colors">
                           Deactivate
                         </button>
                       )}
                       {(p.status === "INACTIVE" || p.status === "SUSPENDED") && (
-                        <button onClick={() => handleAction(p.id, "activate")} disabled={actioning === p.id}
+                        <button onClick={() => confirmAction(p, "activate")} disabled={actioning === p.id}
                           className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 disabled:opacity-50 transition-colors">
                           Activate
                         </button>

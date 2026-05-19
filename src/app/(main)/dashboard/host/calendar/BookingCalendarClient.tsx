@@ -84,6 +84,7 @@ const SOURCE_LABELS: Record<string, string> = {
   AIRBNB: "Airbnb",
   AGODA: "Agoda",
   WALK_ON: "Walk-in",
+  AHANGAMA: "Visit Sri Lanka",
   OTHER: "Other",
 };
 

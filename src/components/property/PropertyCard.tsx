@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { MapPin, Star, Users, BedDouble, Navigation, Car } from "lucide-react";
+import { MapPin, Star, Users, BedDouble, Navigation, Car, CircleDot } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useLKRRate } from "@/hooks/useLKRRate";
 import { ratingToStars } from "@/lib/ratingQuestions";
@@ -21,13 +21,15 @@ interface PropertyCardProps {
   reviewCount: number;
   propertyRating?: number | null;
   propertyRatingCount?: number | null;
+  availableRoomsTonight?: number | null;
   images: { url: string; alt?: string | null }[];
   host: { name?: string | null; image?: string | null };
 }
 
 export default function PropertyCard({
   id, title, district, propertyType, category, pricePerNight, pricePerKm,
-  maxGuests, bedrooms, avgRating, reviewCount, propertyRating, propertyRatingCount, images, host,
+  maxGuests, bedrooms, avgRating, reviewCount, propertyRating, propertyRatingCount,
+  availableRoomsTonight, images, host,
 }: PropertyCardProps) {
   const [imgError, setImgError] = useState(false);
   const rawImg = images[0]?.url;
@@ -118,6 +120,21 @@ export default function PropertyCard({
             <span className="flex items-center gap-1"><Users className="w-3 h-3" />{maxGuests} {isTransport ? "passengers" : "guests"}</span>
             {!isTransport && <span className="flex items-center gap-1"><BedDouble className="w-3 h-3" />{bedrooms} bed{bedrooms !== 1 ? "s" : ""}</span>}
           </div>
+
+          {/* Tonight availability */}
+          {availableRoomsTonight != null && (
+            availableRoomsTonight > 0 ? (
+              <div className="flex items-center gap-1 text-xs font-medium text-green-600 mb-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block flex-shrink-0 animate-pulse" />
+                {availableRoomsTonight} {isTransport ? "vehicle" : "room"}{availableRoomsTonight !== 1 ? "s" : ""} free {isTransport ? "today" : "tonight"}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 text-xs font-medium text-gray-400 mb-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block flex-shrink-0" />
+                Fully booked {isTransport ? "today" : "tonight"}
+              </div>
+            )
+          )}
 
           {/* Host name */}
           {host.name && (

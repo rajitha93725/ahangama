@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useLKRRate } from "@/hooks/useLKRRate";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, Upload, X, Star } from "lucide-react";
 import Link from "next/link";
+
+type PropertyImage = { id: string; url: string; isPrimary: boolean; order: number };
 
 type PropertyData = {
   id: string;
@@ -73,10 +75,15 @@ export default function EditPropertyPage() {
   const [priceHalfBoard, setPriceHalfBoard] = useState<string | number>("");
   const [priceFullBoard, setPriceFullBoard] = useState<string | number>("");
 
+  // Images
+  const [images, setImages] = useState<PropertyImage[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [imageError, setImageError] = useState("");
+
   useEffect(() => {
     fetch(`/api/properties/${id}`)
       .then((r) => r.json())
-      .then((data: PropertyData) => {
+      .then((data: PropertyData & { images?: PropertyImage[] }) => {
         setProperty(data);
         setPricePerNight(data.pricePerNight);
         setMinPrice(data.minPrice);
@@ -84,6 +91,7 @@ export default function EditPropertyPage() {
         setPriceBnB(data.priceBnB ?? "");
         setPriceHalfBoard(data.priceHalfBoard ?? "");
         setPriceFullBoard(data.priceFullBoard ?? "");
+        setImages(data.images ?? []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -125,53 +133,165 @@ export default function EditPropertyPage() {
     }
   };
 
+  const handleImageUpload = async (files: FileList) => {
+    setUploading(true);
+    setImageError("");
+    const formData = new FormData();
+    Array.from(files).forEach((f) => formData.append("files", f));
+    try {
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+
+      const isFirst = images.length === 0;
+      const results = await Promise.all(
+        (data.urls as string[]).map((url: string, i: number) =>
+          fetch(`/api/properties/${id}/images`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, isPrimary: isFirst && i === 0, order: images.length + i }),
+          }).then((r) => r.json())
+        )
+      );
+      setImages((prev) => [...prev, ...results.filter((r) => r?.id)]);
+    } catch (e: unknown) {
+      setImageError(e instanceof Error ? e.message : "Image upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSetPrimary = async (imgId: string) => {
+    await fetch(`/api/properties/${id}/images/${imgId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isPrimary: true }),
+    });
+    setImages((prev) => prev.map((img) => ({ ...img, isPrimary: img.id === imgId })));
+  };
+
+  const handleDeleteImage = async (imgId: string) => {
+    await fetch(`/api/properties/${id}/images/${imgId}`, { method: "DELETE" });
+    setImages((prev) => {
+      const remaining = prev.filter((img) => img.id !== imgId);
+      // If we removed the primary, promote the first remaining image
+      const hadPrimary = prev.find((img) => img.id === imgId)?.isPrimary;
+      if (hadPrimary && remaining.length > 0 && !remaining.some((img) => img.isPrimary)) {
+        fetch(`/api/properties/${id}/images/${remaining[0].id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isPrimary: true }),
+        });
+        return remaining.map((img, i) => ({ ...img, isPrimary: i === 0 }));
+      }
+      return remaining;
+    });
+  };
+
   if (loading) return <div className="max-w-2xl mx-auto px-4 py-16 text-center text-gray-400">Loading…</div>;
   if (!property) return <div className="max-w-2xl mx-auto px-4 py-16 text-center text-gray-500">Property not found.</div>;
 
   const isTransport = property.category === "TRANSPORT";
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
-      <div className="flex items-center gap-3 mb-8">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 space-y-6">
+      <div className="flex items-center gap-3">
         <Link href={`/properties/${id}`} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Edit Pricing</h1>
-          <p className="text-xs text-gray-500 mt-0.5">{isTransport ? "Transport" : "Stay"} listing</p>
+          <h1 className="text-xl font-bold text-gray-900">Edit Listing</h1>
+          <p className="text-xs text-gray-500 mt-0.5">{property.title}</p>
         </div>
       </div>
 
+      {/* ── Photos ── */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <p className="text-sm font-semibold text-gray-700 mb-4">Photos</p>
+
+        {imageError && (
+          <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-3">{imageError}</p>
+        )}
+
+        {images.length > 0 && (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {images.map((img) => (
+              <div key={img.id} className="relative aspect-square rounded-xl overflow-hidden group">
+                <img src={img.url} alt="" className="w-full h-full object-cover" />
+                {img.isPrimary && (
+                  <span className="absolute top-1 left-1 bg-teal-600 text-white text-xs px-2 py-0.5 rounded-full">
+                    Main
+                  </span>
+                )}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                  {!img.isPrimary && (
+                    <button
+                      onClick={() => handleSetPrimary(img.id)}
+                      title="Set as main photo"
+                      className="p-1.5 bg-white rounded-full text-amber-600 hover:bg-amber-50"
+                    >
+                      <Star className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDeleteImage(img.id)}
+                    title="Remove photo"
+                    className="p-1.5 bg-white rounded-full text-red-500 hover:bg-red-50"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-teal-400 transition-colors">
+          <Upload className="w-5 h-5 text-gray-400" />
+          <span className="text-sm text-gray-600">
+            {uploading ? "Uploading…" : images.length === 0 ? "Upload photos" : "Add more photos"}
+          </span>
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => e.target.files && handleImageUpload(e.target.files)}
+          />
+        </label>
+        {images.length > 0 && (
+          <p className="text-xs text-gray-400 mt-2">Hover a photo to set it as main or remove it.</p>
+        )}
+      </div>
+
+      {/* ── Pricing ── */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-6">
-        {/* Base rates */}
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            {isTransport ? "Transport Pricing" : "Room Only Rate"}
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <PriceField
-                label={isTransport ? "Parking / Night" : "Room Only / Night"}
-                value={pricePerNight} onChange={setPricePerNight}
-                min={0} required lkrRate={lkrRate}
-              />
-              {!isTransport && typeof pricePerNight === "number" && pricePerNight > 0 && (
-                <p className="text-xs text-teal-600 mt-1">
-                  Minimum guests can offer: ${Math.round(pricePerNight * 0.8)}/night (80%)
-                </p>
-              )}
-            </div>
-            {isTransport && (
-              <PriceField
-                label="Per Kilometer"
-                value={pricePerKm} onChange={setPricePerKm}
-                min={0} lkrRate={lkrRate} suffix="/ km"
-              />
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          {isTransport ? "Transport Pricing" : "Room Only Rate"}
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <PriceField
+              label={isTransport ? "Parking / Night" : "Room Only / Night"}
+              value={pricePerNight} onChange={setPricePerNight}
+              min={0} required lkrRate={lkrRate}
+            />
+            {!isTransport && typeof pricePerNight === "number" && pricePerNight > 0 && (
+              <p className="text-xs text-teal-600 mt-1">
+                Minimum guests can offer: ${Math.round(pricePerNight * 0.8)}/night (80%)
+              </p>
             )}
           </div>
+          {isTransport && (
+            <PriceField
+              label="Per Kilometer"
+              value={pricePerKm} onChange={setPricePerKm}
+              min={0} lkrRate={lkrRate} suffix="/ km"
+            />
+          )}
         </div>
 
-        {/* Meal plan rates — stays only */}
         {!isTransport && (
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">

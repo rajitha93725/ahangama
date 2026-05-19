@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 const VALID_SOURCES = ["BOOKING_COM", "AIRBNB", "AGODA", "WALK_ON", "OTHER"];
 
-// PUT /api/host/external-bookings/[id] — update an external booking
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session || (session.user.role !== "HOST" && session.user.role !== "ADMIN")) {
@@ -13,18 +12,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params;
 
-  // Verify ownership
-  const rows = await prisma.$queryRawUnsafe<{ id: string; roomId: string; checkIn: string; checkOut: string }[]>(
-    `SELECT eb.id, eb."roomId", eb."checkIn", eb."checkOut" FROM "ExternalBooking" eb
-     INNER JOIN "Property" p ON p.id = eb."propertyId"
-     WHERE eb.id = $1 AND p."hostId" = $2`,
-    id,
-    session.user.id
-  );
-  if (!rows.length) {
-    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-  }
-  const existing = rows[0];
+  const { data: hostProperties } = await supabaseAdmin.from("Property").select("id").eq("hostId", session.user.id);
+  const hostPropertyIds = (hostProperties || []).map((p: { id: string }) => p.id);
+
+  const { data: existing } = await supabaseAdmin
+    .from("ExternalBooking")
+    .select("id, roomId, checkIn, checkOut")
+    .eq("id", id)
+    .in("propertyId", hostPropertyIds)
+    .maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
 
   const body = await req.json();
   const { checkIn, checkOut, source, guestName, notes } = body;
@@ -43,57 +40,33 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "checkOut must be after checkIn" }, { status: 400 });
   }
 
-  const checkInIso = newCheckIn.toISOString();
-  const checkOutIso = newCheckOut.toISOString();
-
-  // Double-booking check (excluding self)
   if (checkIn || checkOut) {
-    const conflict = await prisma.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "ExternalBooking"
-       WHERE "roomId" = $1 AND status = 'BOOKED' AND id != $2
-         AND "checkIn" < $3::timestamptz AND "checkOut" > $4::timestamptz`,
-      existing.roomId,
-      id,
-      checkOutIso,
-      checkInIso
-    );
-    if (conflict.length) {
+    const { data: conflict } = await supabaseAdmin
+      .from("ExternalBooking")
+      .select("id")
+      .eq("roomId", existing.roomId)
+      .eq("status", "BOOKED")
+      .neq("id", id)
+      .lt("checkIn", newCheckOut.toISOString())
+      .gt("checkOut", newCheckIn.toISOString())
+      .maybeSingle();
+    if (conflict) {
       return NextResponse.json({ error: "Room already has another booking for this period" }, { status: 409 });
     }
   }
 
-  const now = new Date().toISOString();
-  const updates: string[] = [];
-  const values: unknown[] = [];
+  const updateData: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  if (checkIn) updateData.checkIn = newCheckIn.toISOString();
+  if (checkOut) updateData.checkOut = newCheckOut.toISOString();
+  if (source) updateData.source = source;
+  if (guestName !== undefined) updateData.guestName = guestName || null;
+  if (notes !== undefined) updateData.notes = notes || null;
 
-  if (checkIn) { values.push(checkInIso); updates.push(`"checkIn" = $${values.length}`); }
-  if (checkOut) { values.push(checkOutIso); updates.push(`"checkOut" = $${values.length}`); }
-  if (source) { values.push(source); updates.push(`source = $${values.length}`); }
-  if (guestName !== undefined) { values.push(guestName || null); updates.push(`"guestName" = $${values.length}`); }
-  if (notes !== undefined) { values.push(notes || null); updates.push(`notes = $${values.length}`); }
-
-  values.push(now);
-  updates.push(`"updatedAt" = $${values.length}`);
-  values.push(id);
-
-  await prisma.$queryRawUnsafe(
-    `UPDATE "ExternalBooking" SET ${updates.join(", ")} WHERE id = $${values.length}`,
-    ...values
-  );
-
-  const [booking] = await prisma.$queryRawUnsafe<{
-    id: string; propertyId: string; roomId: string; checkIn: string; checkOut: string;
-    source: string; guestName: string | null; notes: string | null; status: string;
-  }[]>(
-    `SELECT * FROM "ExternalBooking" WHERE id = $1`,
-    id
-  );
-
+  const { data: booking } = await supabaseAdmin.from("ExternalBooking").update(updateData).eq("id", id).select().single();
   return NextResponse.json(booking);
 }
 
-// DELETE /api/host/external-bookings/[id] — remove an external booking
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session || (session.user.role !== "HOST" && session.user.role !== "ADMIN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -101,18 +74,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const { id } = await params;
 
-  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT eb.id FROM "ExternalBooking" eb
-     INNER JOIN "Property" p ON p.id = eb."propertyId"
-     WHERE eb.id = $1 AND p."hostId" = $2`,
-    id,
-    session.user.id
-  );
-  if (!rows.length) {
-    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-  }
+  const { data: hostProperties } = await supabaseAdmin.from("Property").select("id").eq("hostId", session.user.id);
+  const hostPropertyIds = (hostProperties || []).map((p: { id: string }) => p.id);
 
-  await prisma.$executeRaw`DELETE FROM "ExternalBooking" WHERE id = ${id}`;
+  const { data: existing } = await supabaseAdmin
+    .from("ExternalBooking")
+    .select("id")
+    .eq("id", id)
+    .in("propertyId", hostPropertyIds)
+    .maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
 
+  await supabaseAdmin.from("ExternalBooking").delete().eq("id", id);
   return NextResponse.json({ success: true });
 }

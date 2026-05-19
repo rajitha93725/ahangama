@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { PropertySchema, TransportSchema } from "@/lib/validations";
 import { randomUUID } from "crypto";
 
@@ -13,119 +13,124 @@ export async function GET(req: NextRequest) {
   const propertyType = searchParams.get("propertyType");
   const amenities = searchParams.get("amenities");
   const category = searchParams.get("category");
-  const sortBy = searchParams.get("sortBy") || "newest"; // newest | price_asc | price_desc | rating_desc
+  const sortBy = searchParams.get("sortBy") || "newest";
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "12");
+  const isSortByRating = sortBy === "rating_desc";
 
-  const where: Record<string, unknown> = { status: "ACTIVE" };
-
-  if (district) where.district = { contains: district, mode: "insensitive" };
-  if (minPrice || maxPrice) {
-    where.pricePerNight = {};
-    if (minPrice) (where.pricePerNight as Record<string, number>).gte = parseFloat(minPrice);
-    if (maxPrice) (where.pricePerNight as Record<string, number>).lte = parseFloat(maxPrice);
-  }
-  if (guests) where.maxGuests = { gte: parseInt(guests) };
-  if (propertyType) where.propertyType = propertyType;
+  // If amenity filter, find property IDs first
+  let amenityPropertyIds: string[] | null = null;
   if (amenities) {
     const amenityList = amenities.split(",");
-    where.amenities = { some: { name: { in: amenityList } } };
-  }
-  // `category` is unknown to the stale Prisma client — collect IDs via raw SQL first
-  let categoryIds: string[] | null = null;
-  if (category) {
-    const rows = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Property" WHERE "category" = ${category}
-    `;
-    categoryIds = rows.map((r) => r.id);
-    if (categoryIds.length === 0) {
+    const { data: amenityMatches } = await supabaseAdmin
+      .from("PropertyAmenity")
+      .select("propertyId")
+      .in("name", amenityList);
+    amenityPropertyIds = [...new Set((amenityMatches || []).map((a: { propertyId: string }) => a.propertyId))];
+    if (!amenityPropertyIds.length) {
       return NextResponse.json({ data: [], total: 0, page, totalPages: 0 });
     }
-    where.id = { in: categoryIds };
   }
 
-  // Determine sort order
-  const orderBy: Record<string, string> =
-    sortBy === "price_asc" ? { pricePerNight: "asc" } :
-    sortBy === "price_desc" ? { pricePerNight: "desc" } :
-    { createdAt: "desc" }; // newest (default) and rating_desc both start with newest; rating sort applied post-query
+  let countQ = supabaseAdmin.from("Property").select("*", { count: "exact", head: true }).eq("status", "ACTIVE");
+  let dataQ = supabaseAdmin
+    .from("Property")
+    .select("id, title, district, propertyType, category, pricePerNight, pricePerKm, mealPlan, priceBnB, priceHalfBoard, priceFullBoard, maxGuests, bedrooms, hostId")
+    .eq("status", "ACTIVE");
 
-  const [total, properties] = await Promise.all([
-    prisma.property.count({ where }),
-    prisma.property.findMany({
-      where,
-      include: {
-        images: { where: { isPrimary: true }, take: 1 },
-        host: { select: { id: true, name: true, image: true } },
-        reviews: { select: { rating: true } },
-        amenities: { select: { name: true, icon: true } },
-      },
-      orderBy,
-      skip: sortBy === "rating_desc" ? 0 : (page - 1) * limit, // fetch all for rating sort, slice after
-      take: sortBy === "rating_desc" ? undefined : limit,
-    }),
+  if (district) { countQ = countQ.ilike("district", `%${district}%`); dataQ = dataQ.ilike("district", `%${district}%`); }
+  if (minPrice) { countQ = countQ.gte("pricePerNight", parseFloat(minPrice)); dataQ = dataQ.gte("pricePerNight", parseFloat(minPrice)); }
+  if (maxPrice) { countQ = countQ.lte("pricePerNight", parseFloat(maxPrice)); dataQ = dataQ.lte("pricePerNight", parseFloat(maxPrice)); }
+  if (guests) { countQ = countQ.gte("maxGuests", parseInt(guests)); dataQ = dataQ.gte("maxGuests", parseInt(guests)); }
+  if (propertyType) { countQ = countQ.eq("propertyType", propertyType); dataQ = dataQ.eq("propertyType", propertyType); }
+  if (category) { countQ = countQ.eq("category", category); dataQ = dataQ.eq("category", category); }
+  if (amenityPropertyIds) { countQ = countQ.in("id", amenityPropertyIds); dataQ = dataQ.in("id", amenityPropertyIds); }
+
+  const ascending = sortBy === "price_asc";
+  const orderCol = sortBy === "price_asc" || sortBy === "price_desc" ? "pricePerNight" : "createdAt";
+  if (!isSortByRating) {
+    dataQ = dataQ.order(orderCol, { ascending }).range((page - 1) * limit, page * limit - 1);
+  } else {
+    dataQ = dataQ.order("createdAt", { ascending: false }).limit(300);
+  }
+
+  const [{ count: total }, { data: properties }] = await Promise.all([countQ, dataQ]);
+  if (!properties?.length) return NextResponse.json({ data: [], total: total || 0, page, totalPages: Math.ceil((total || 0) / limit) });
+
+  const propIds = properties.map((p: { id: string }) => p.id);
+  const hostIds = [...new Set(properties.map((p: { hostId: string }) => p.hostId))];
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const tonightStart = `${todayStr}T00:00:00.000Z`;
+  const tonightEnd = `${todayStr}T23:59:59.999Z`;
+
+  const [{ data: images }, { data: hosts }, { data: reviews }, { data: ratings }, { data: allRooms }] = await Promise.all([
+    supabaseAdmin.from("PropertyImage").select("propertyId, url, alt").in("propertyId", propIds).eq("isPrimary", true),
+    supabaseAdmin.from("User").select("id, name, image").in("id", hostIds),
+    supabaseAdmin.from("Review").select("propertyId, rating").in("propertyId", propIds),
+    supabaseAdmin.from("PropertyRating").select("propertyId, avgScore, isSeeded").in("propertyId", propIds),
+    supabaseAdmin.from("Room").select("id, propertyId").in("propertyId", propIds).eq("isActive", true),
   ]);
 
-  const propertyIds = properties.map((p) => p.id);
+  const roomIds = (allRooms || []).map((r: { id: string }) => r.id);
+  const [{ data: intBooked }, { data: extBooked }] = roomIds.length
+    ? await Promise.all([
+        supabaseAdmin.from("Booking").select("roomId").in("roomId", roomIds)
+          .in("status", ["ACCEPTED", "COMPLETED"]).lte("checkIn", tonightEnd).gt("checkOut", tonightStart),
+        supabaseAdmin.from("ExternalBooking").select("roomId").in("roomId", roomIds)
+          .eq("status", "BOOKED").lte("checkIn", tonightEnd).gt("checkOut", tonightStart),
+      ])
+    : [{ data: [] }, { data: [] }];
 
-  // Fetch category + pricePerKm (stale Prisma client doesn't know these columns)
-  const extraRows: { id: string; category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }[] =
-    propertyIds.length > 0
-      ? await prisma.$queryRawUnsafe(
-          `SELECT id, category, "pricePerKm", "mealPlan", "priceBnB", "priceHalfBoard", "priceFullBoard" FROM "Property" WHERE id IN (${propertyIds.map((_, i) => `$${i + 1}`).join(",")})`,
-          ...propertyIds
-        )
-      : [];
-  const extraMap: Record<string, { category: string; pricePerKm: number | null; mealPlan: string; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }> = {};
-  for (const r of extraRows) extraMap[r.id] = { category: r.category, pricePerKm: r.pricePerKm, mealPlan: r.mealPlan ?? "ROOM_ONLY", priceBnB: r.priceBnB ?? null, priceHalfBoard: r.priceHalfBoard ?? null, priceFullBoard: r.priceFullBoard ?? null };
+  const bookedSet = new Set([
+    ...(intBooked || []).filter((r: { roomId: string | null }) => r.roomId).map((r: { roomId: string }) => r.roomId),
+    ...(extBooked || []).map((r: { roomId: string }) => r.roomId),
+  ]);
 
-  // Fetch PropertyRating averages + counts for all returned properties
-  const pratingRows: { propertyId: string; avgScore: number; isSeeded: boolean }[] =
-    propertyIds.length > 0
-      ? await prisma.$queryRawUnsafe(
-          `SELECT "propertyId", "avgScore", "isSeeded" FROM "PropertyRating" WHERE "propertyId" IN (${propertyIds.map((_, i) => `$${i + 1}`).join(",")})`,
-          ...propertyIds
-        )
-      : [];
-  const pratingMap: Record<string, { scores: number[]; total: number; real: number }> = {};
-  for (const row of pratingRows) {
-    if (!pratingMap[row.propertyId]) pratingMap[row.propertyId] = { scores: [], total: 0, real: 0 };
-    pratingMap[row.propertyId].scores.push(Number(row.avgScore));
-    pratingMap[row.propertyId].total++;
-    if (!row.isSeeded) pratingMap[row.propertyId].real++;
+  const roomTotalByProp = new Map<string, number>();
+  const roomAvailByProp = new Map<string, number>();
+  for (const room of (allRooms || []) as { id: string; propertyId: string }[]) {
+    roomTotalByProp.set(room.propertyId, (roomTotalByProp.get(room.propertyId) ?? 0) + 1);
+    if (!bookedSet.has(room.id)) {
+      roomAvailByProp.set(room.propertyId, (roomAvailByProp.get(room.propertyId) ?? 0) + 1);
+    }
   }
 
-  let data = properties.map((p) => {
-    const pr = pratingMap[p.id];
-    const propertyRating = pr?.scores.length
-      ? parseFloat((pr.scores.reduce((a, b) => a + b, 0) / pr.scores.length).toFixed(1))
-      : null;
+  const imageMap = Object.fromEntries((images || []).map((img: { propertyId: string; url: string; alt: string | null }) => [img.propertyId, img]));
+  const hostMap = Object.fromEntries((hosts || []).map((h: { id: string; [key: string]: unknown }) => [h.id, h]));
+  const reviewsByProp: Record<string, number[]> = {};
+  (reviews || []).forEach((r: { propertyId: string; rating: number }) => {
+    if (!reviewsByProp[r.propertyId]) reviewsByProp[r.propertyId] = [];
+    reviewsByProp[r.propertyId].push(r.rating);
+  });
+  const ratingsByProp: Record<string, number[]> = {};
+  (ratings || []).forEach((r: { propertyId: string; avgScore: number }) => {
+    if (!ratingsByProp[r.propertyId]) ratingsByProp[r.propertyId] = [];
+    ratingsByProp[r.propertyId].push(Number(r.avgScore));
+  });
+
+  let data = (properties as { id: string; hostId: string; [key: string]: unknown }[]).map((p) => {
+    const pr = ratingsByProp[p.id] || [];
+    const rv = reviewsByProp[p.id] || [];
+    const propertyRating = pr.length ? parseFloat((pr.reduce((a, b) => a + b, 0) / pr.length).toFixed(1)) : null;
     return {
       ...p,
-      ...extraMap[p.id],
-      avgRating:
-        p.reviews.length > 0
-          ? p.reviews.reduce((sum, r) => sum + r.rating, 0) / p.reviews.length
-          : null,
-      reviewCount: p.reviews.length,
+      images: imageMap[p.id] ? [imageMap[p.id]] : [],
+      host: hostMap[p.hostId] ?? { id: p.hostId, name: null, image: null },
+      avgRating: rv.length > 0 ? rv.reduce((a, b) => a + b, 0) / rv.length : null,
+      reviewCount: rv.length,
       propertyRating,
-      propertyRatingCount: pr?.total ?? 0,
+      propertyRatingCount: pr.length,
+      availableRoomsTonight: roomTotalByProp.has(p.id) ? (roomAvailByProp.get(p.id) ?? 0) : null,
     };
   });
 
-  // Apply rating sort + pagination post-query (rating lives outside Prisma)
-  if (sortBy === "rating_desc") {
-    data.sort((a, b) => (b.propertyRating ?? 0) - (a.propertyRating ?? 0));
+  if (isSortByRating) {
+    data.sort((a, b) => ((b.propertyRating as number | null) ?? 0) - ((a.propertyRating as number | null) ?? 0));
     data = data.slice((page - 1) * limit, page * limit);
   }
 
-  const safePayload = JSON.parse(
-    JSON.stringify(
-      { data, total, page, totalPages: Math.ceil(total / limit) },
-      (_k, v) => (typeof v === "bigint" ? Number(v) : v)
-    )
-  );
-  return NextResponse.json(safePayload);
+  return NextResponse.json({ data, total: total || 0, page, totalPages: Math.ceil((total || 0) / limit) });
 }
 
 export async function POST(req: NextRequest) {
@@ -144,35 +149,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
     }
 
-    // Strip fields the stale Prisma client doesn't know about yet.
-    // `category` and `pricePerKm` were added in migrations whose
-    // `prisma generate` step was blocked by the locked DLL (dev server running).
-    // We write them via $executeRaw after the create.
     const d = result.data as Record<string, unknown>;
     const amenities = d.amenities as string[] | undefined;
-    const category = d.category as string | undefined;
+    const category = (d.category as string | undefined) ?? "STAY";
     const pricePerKm = d.pricePerKm as number | undefined;
-    const mealPlan = d.mealPlan as string | undefined;
+    const mealPlan = (d.mealPlan as string | undefined) ?? "ROOM_ONLY";
     const priceBnB = (d.priceBnB != null && d.priceBnB !== "") ? Number(d.priceBnB) : null;
     const priceHalfBoard = (d.priceHalfBoard != null && d.priceHalfBoard !== "") ? Number(d.priceHalfBoard) : null;
     const priceFullBoard = (d.priceFullBoard != null && d.priceFullBoard !== "") ? Number(d.priceFullBoard) : null;
     const vehicleGroups = d.vehicleGroups as { type: string; count: number; maxPassengers?: number }[] | undefined;
     const roomTypesInput = body.roomTypes as Array<{
-      typeName: string;
-      displayLabel: string;
-      roomCount: number;
-      beds: number;
-      maxGuests: number;
-      bathrooms: number;
-      amenities: string[];
-      pricePerNight: number;
-      priceBnB: number | null;
-      priceHalfBoard: number | null;
-      priceFullBoard: number | null;
+      typeName: string; displayLabel: string; roomCount: number; beds: number;
+      maxGuests: number; bathrooms: number; amenities: string[];
+      pricePerNight: number; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null;
     }> | undefined;
 
-    const property = await prisma.property.create({
-      data: {
+    const vehicleGroupsJson = vehicleGroups?.length ? JSON.stringify(vehicleGroups) : null;
+
+    const { data: property, error: propertyInsertError } = await supabaseAdmin
+      .from("Property")
+      .insert({
+        id: randomUUID(),
         title: d.title as string,
         description: d.description as string,
         propertyType: d.propertyType as string,
@@ -188,103 +185,93 @@ export async function POST(req: NextRequest) {
         beds: d.beds as number,
         hostId: session.user.id,
         status: "PENDING_APPROVAL",
-        amenities: amenities?.length
-          ? { create: amenities.map((name) => ({ name })) }
-          : undefined,
-      },
-      include: { amenities: true, images: true },
-    });
+        category,
+        mealPlan,
+        priceBnB,
+        priceHalfBoard,
+        priceFullBoard,
+        vehicleGroups: vehicleGroupsJson,
+        ...(typeof pricePerKm === "number" ? { pricePerKm } : {}),
+        updatedAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
-    // Write the columns the Prisma client doesn't know about via raw SQL
-    const finalCategory = category ?? "STAY";
-    const finalMealPlan = mealPlan ?? "ROOM_ONLY";
-    const vehicleGroupsJson = vehicleGroups?.length ? JSON.stringify(vehicleGroups) : null;
+    if (propertyInsertError || !property) {
+      console.error("[POST /api/properties] Property insert failed:", propertyInsertError);
+      return NextResponse.json({ error: "Failed to save listing. Please try again." }, { status: 500 });
+    }
 
-    await prisma.$queryRawUnsafe(
-      `UPDATE "Property" SET category = $1, "mealPlan" = $2, "priceBnB" = $3, "priceHalfBoard" = $4, "priceFullBoard" = $5, "vehicleGroups" = $6 WHERE id = $7`,
-      finalCategory, finalMealPlan, priceBnB, priceHalfBoard, priceFullBoard, vehicleGroupsJson, property.id
-    );
-
-    if (isTransport && typeof pricePerKm === "number") {
-      await prisma.$executeRaw`UPDATE "Property" SET "pricePerKm" = ${pricePerKm} WHERE "id" = ${property.id}`;
+    if (amenities?.length) {
+      await supabaseAdmin.from("PropertyAmenity").insert(amenities.map((name) => ({ propertyId: property.id, name })));
     }
 
     if (isTransport && vehicleGroups?.length) {
-      // Batch INSERT all vehicle Room rows in one query
       const VEHICLE_SHORT: Record<string, string> = {
         CAR: "Car", VAN: "Van", TUK_TUK: "Tuk-Tuk", BUS: "Bus",
         BOAT: "Boat", MOTORBIKE: "Bike", JEEP: "Jeep", BICYCLE: "Bicycle",
       };
-      const vRows: unknown[] = [];
-      const vPlaceholders: string[] = [];
-      let vp = 1;
+      const roomData: { propertyId: string; name: string; maxGuests: number; isActive: boolean }[] = [];
       for (const group of vehicleGroups) {
         const name = VEHICLE_SHORT[group.type] ?? group.type;
         for (let i = 1; i <= group.count; i++) {
-          vRows.push(randomUUID(), property.id, `${name} ${i}`, group.maxPassengers ?? 4);
-          vPlaceholders.push(`($${vp++}, $${vp++}, $${vp++}, $${vp++}, true, NOW())`);
+          roomData.push({ propertyId: property.id, name: `${name} ${i}`, maxGuests: group.maxPassengers ?? 4, isActive: true });
         }
       }
-      if (vRows.length) {
-        await prisma.$queryRawUnsafe(
-          `INSERT INTO "Room" (id, "propertyId", name, "maxGuests", "isActive", "createdAt") VALUES ${vPlaceholders.join(", ")}`,
-          ...vRows
-        );
-      }
+      if (roomData.length) await supabaseAdmin.from("Room").insert(roomData.map((r) => ({ id: randomUUID(), ...r })));
     } else if (!isTransport && roomTypesInput?.length) {
-      // Batch INSERT all RoomType rows, then batch INSERT all Room rows
-      const rtRows: unknown[] = [];
-      const rtPlaceholders: string[] = [];
-      const rtIds: string[] = [];
-      let rtp = 1;
       for (const rt of roomTypesInput) {
-        const rtId = randomUUID();
-        rtIds.push(rtId);
-        rtRows.push(rtId, property.id, rt.typeName, rt.displayLabel, rt.roomCount,
-          rt.beds, rt.maxGuests, rt.bathrooms, JSON.stringify(rt.amenities ?? []),
-          rt.pricePerNight, rt.priceBnB ?? null, rt.priceHalfBoard ?? null, rt.priceFullBoard ?? null);
-        rtPlaceholders.push(`($${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, $${rtp++}, NOW(), NOW())`);
-      }
-      await prisma.$queryRawUnsafe(
-        `INSERT INTO "RoomType" (id, "propertyId", "typeName", "displayLabel", "roomCount", beds, "maxGuests", bathrooms, amenities, "pricePerNight", "priceBnB", "priceHalfBoard", "priceFullBoard", "createdAt", "updatedAt") VALUES ${rtPlaceholders.join(", ")}`,
-        ...rtRows
-      );
-      const roomRows: unknown[] = [];
-      const roomPlaceholders: string[] = [];
-      let rp = 1;
-      for (let ti = 0; ti < roomTypesInput.length; ti++) {
-        const rt = roomTypesInput[ti];
-        for (let i = 1; i <= rt.roomCount; i++) {
-          roomRows.push(randomUUID(), property.id, rtIds[ti], `${rt.displayLabel} ${i}`, rt.maxGuests);
-          roomPlaceholders.push(`($${rp++}, $${rp++}, $${rp++}, $${rp++}, $${rp++}, true, NOW())`);
+        const { data: roomType, error: roomTypeError } = await supabaseAdmin
+          .from("RoomType")
+          .insert({
+            id: randomUUID(),
+            propertyId: property.id,
+            typeName: rt.typeName,
+            displayLabel: rt.displayLabel,
+            roomCount: rt.roomCount,
+            beds: rt.beds,
+            maxGuests: rt.maxGuests,
+            bathrooms: rt.bathrooms,
+            amenities: JSON.stringify(rt.amenities ?? []),
+            pricePerNight: rt.pricePerNight,
+            priceBnB: rt.priceBnB ?? null,
+            priceHalfBoard: rt.priceHalfBoard ?? null,
+            priceFullBoard: rt.priceFullBoard ?? null,
+            updatedAt: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        if (roomTypeError || !roomType) {
+          console.error("[POST /api/properties] RoomType insert failed:", roomTypeError);
+          continue;
         }
-      }
-      if (roomRows.length) {
-        await prisma.$queryRawUnsafe(
-          `INSERT INTO "Room" (id, "propertyId", "roomTypeId", name, "maxGuests", "isActive", "createdAt") VALUES ${roomPlaceholders.join(", ")}`,
-          ...roomRows
+        await supabaseAdmin.from("Room").insert(
+          Array.from({ length: rt.roomCount }, (_, i) => ({
+            id: randomUUID(),
+            propertyId: property.id,
+            roomTypeId: roomType.id,
+            name: `${rt.displayLabel} ${i + 1}`,
+            maxGuests: rt.maxGuests,
+            isActive: true,
+          }))
         );
       }
     } else if (!isTransport) {
-      // Fallback: batch INSERT rooms from bedroom count
       const bedroomCount = (d.bedrooms as number) || 0;
       if (bedroomCount > 0) {
-        const bRows: unknown[] = [];
-        const bPlaceholders: string[] = [];
-        let bp = 1;
-        for (let i = 1; i <= bedroomCount; i++) {
-          bRows.push(randomUUID(), property.id, `Room ${i}`);
-          bPlaceholders.push(`($${bp++}, $${bp++}, $${bp++}, 2, true, NOW())`);
-        }
-        await prisma.$queryRawUnsafe(
-          `INSERT INTO "Room" (id, "propertyId", name, "maxGuests", "isActive", "createdAt") VALUES ${bPlaceholders.join(", ")}`,
-          ...bRows
+        await supabaseAdmin.from("Room").insert(
+          Array.from({ length: bedroomCount }, (_, i) => ({
+            id: randomUUID(),
+            propertyId: property.id, name: `Room ${i + 1}`, maxGuests: 2, isActive: true,
+          }))
         );
       }
     }
 
+    const { data: amenityRows } = await supabaseAdmin.from("PropertyAmenity").select("*").eq("propertyId", property.id);
+
     return NextResponse.json(
-      { ...property, category: finalCategory, pricePerKm: pricePerKm ?? null },
+      { ...property, amenities: amenityRows || [], images: [], category, pricePerKm: pricePerKm ?? null },
       { status: 201 }
     );
   } catch (err) {

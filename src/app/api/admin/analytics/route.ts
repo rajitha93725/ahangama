@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -10,59 +10,65 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = req.nextUrl;
   const days = parseInt(searchParams.get("days") || "30");
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   const [
-    totalUsers,
-    totalProperties,
-    totalBookings,
-    recentBookings,
-    newUsers,
-    bookingsByStatus,
+    { count: totalUsers },
+    { count: totalProperties },
+    { count: totalBookings },
+    { count: recentBookings },
+    { count: newUsers },
+    { data: allBookings },
+    { data: topPropertyData },
   ] = await Promise.all([
-    prisma.user.count(),
-    prisma.property.count({ where: { status: "ACTIVE" } }),
-    prisma.booking.count(),
-    prisma.booking.count({ where: { createdAt: { gte: since } } }),
-    prisma.user.count({ where: { createdAt: { gte: since } } }),
-    prisma.booking.groupBy({ by: ["status"], _count: true }),
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }),
+    supabaseAdmin.from("Property").select("*", { count: "exact", head: true }).eq("status", "ACTIVE"),
+    supabaseAdmin.from("Booking").select("*", { count: "exact", head: true }),
+    supabaseAdmin.from("Booking").select("*", { count: "exact", head: true }).gte("createdAt", since),
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }).gte("createdAt", since),
+    supabaseAdmin.from("Booking").select("status, totalPrice").gte("createdAt", since),
+    supabaseAdmin.from("Property").select("id, title, district").eq("status", "ACTIVE").limit(10),
   ]);
 
-  const completedBookings = await prisma.booking.findMany({
-    where: { status: "ACCEPTED", createdAt: { gte: since } },
-    select: { totalPrice: true },
+  const revenue = (allBookings || [])
+    .filter((b: { status: string }) => b.status === "ACCEPTED")
+    .reduce((sum: number, b: { totalPrice: number | null }) => sum + (b.totalPrice || 0), 0);
+
+  const bookingsByStatusMap: Record<string, number> = {};
+  (allBookings || []).forEach((b: { status: string }) => {
+    bookingsByStatusMap[b.status] = (bookingsByStatusMap[b.status] || 0) + 1;
+  });
+  const bookingsByStatus = Object.entries(bookingsByStatusMap).map(([status, _count]) => ({ status, _count }));
+
+  const propIds = (topPropertyData || []).map((p: { id: string }) => p.id);
+  const [{ data: propBookings }, { data: propImages }] = await Promise.all([
+    supabaseAdmin.from("Booking").select("propertyId, totalPrice").in("propertyId", propIds).in("status", ["ACCEPTED", "COMPLETED"]),
+    supabaseAdmin.from("PropertyImage").select("propertyId, url").in("propertyId", propIds).eq("isPrimary", true),
+  ]);
+
+  const bookingsByProp: Record<string, { count: number; revenue: number }> = {};
+  (propBookings || []).forEach((b: { propertyId: string; totalPrice: number | null }) => {
+    if (!bookingsByProp[b.propertyId]) bookingsByProp[b.propertyId] = { count: 0, revenue: 0 };
+    bookingsByProp[b.propertyId].count++;
+    bookingsByProp[b.propertyId].revenue += b.totalPrice || 0;
   });
 
-  const revenue = completedBookings.reduce((sum, b) => sum + (b.totalPrice || 0), 0);
+  const imageByProp: Record<string, string> = {};
+  (propImages || []).forEach((img: { propertyId: string; url: string }) => { imageByProp[img.propertyId] = img.url; });
 
-  const topProperties = await prisma.property.findMany({
-    where: { status: "ACTIVE" },
-    include: {
-      bookings: { where: { status: { in: ["ACCEPTED", "COMPLETED"] } }, select: { totalPrice: true } },
-      images: { where: { isPrimary: true }, take: 1 },
-    },
-    take: 10,
-  });
-
-  const ranked = topProperties
-    .map((p) => ({
+  const topProperties = (topPropertyData || [])
+    .map((p: { id: string; title: string; district: string }) => ({
       id: p.id,
       title: p.title,
       district: p.district,
-      image: p.images[0]?.url || null,
-      bookingCount: p.bookings.length,
-      revenue: p.bookings.reduce((s, b) => s + (b.totalPrice || 0), 0),
+      image: imageByProp[p.id] || null,
+      bookingCount: bookingsByProp[p.id]?.count || 0,
+      revenue: bookingsByProp[p.id]?.revenue || 0,
     }))
-    .sort((a, b) => b.bookingCount - a.bookingCount);
+    .sort((a: { bookingCount: number }, b: { bookingCount: number }) => b.bookingCount - a.bookingCount);
 
   return NextResponse.json({
-    totalUsers,
-    totalProperties,
-    totalBookings,
-    recentBookings,
-    newUsers,
-    revenue,
-    bookingsByStatus,
-    topProperties: ranked,
+    totalUsers, totalProperties, totalBookings, recentBookings, newUsers,
+    revenue, bookingsByStatus, topProperties,
   });
 }

@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
 import { timeAgo } from "@/lib/utils";
 import { Bell } from "lucide-react";
@@ -10,17 +10,18 @@ export default async function NotificationsPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const notifications = await prisma.notification.findMany({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const { data: notifications } = await supabaseAdmin
+    .from("Notification")
+    .select("*")
+    .eq("userId", session.user.id)
+    .order("createdAt", { ascending: false })
+    .limit(50);
 
-  // Mark all as read
-  await prisma.notification.updateMany({
-    where: { userId: session.user.id, isRead: false },
-    data: { isRead: true },
-  });
+  await supabaseAdmin
+    .from("Notification")
+    .update({ isRead: true })
+    .eq("userId", session.user.id)
+    .eq("isRead", false);
 
   const getBookingId = (data?: string | null) => {
     try { return data ? JSON.parse(data).bookingId : null; } catch { return null; }
@@ -30,11 +31,11 @@ export default async function NotificationsPage() {
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
       <h1 className="text-2xl font-bold text-gray-900 mb-8">Notifications</h1>
 
-      {notifications.length === 0 ? (
+      {!notifications?.length ? (
         <EmptyState icon={Bell} title="No notifications" description="You'll see booking requests, offers, and updates here." />
       ) : (
         <div className="space-y-3">
-          {notifications.map((n) => {
+          {notifications.map((n: { id: string; isRead: boolean; title: string; message: string; createdAt: string; data: string | null; type: string }) => {
             const bookingId = getBookingId(n.data);
             const content = (
               <div className={`p-4 rounded-2xl border transition-colors ${n.isRead ? "bg-white border-gray-100" : "bg-teal-50 border-teal-200"}`}>
@@ -45,7 +46,7 @@ export default async function NotificationsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900">{n.title}</p>
                     <p className="text-sm text-gray-600 mt-0.5">{n.message}</p>
-                    <p className="text-xs text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
+                    <p className="text-xs text-gray-400 mt-1">{timeAgo(new Date(n.createdAt))}</p>
                   </div>
                 </div>
               </div>

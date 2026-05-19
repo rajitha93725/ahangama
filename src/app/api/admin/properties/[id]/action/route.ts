@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { randomUUID } from "crypto";
 
 export async function POST(
@@ -13,7 +13,7 @@ export async function POST(
   }
 
   const { id } = await params;
-  const { action } = await req.json(); // "approve" | "reject" | "activate" | "deactivate" | "suspend"
+  const { action } = await req.json();
 
   const statusMap: Record<string, string> = {
     approve: "ACTIVE",
@@ -27,33 +27,33 @@ export async function POST(
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
 
-  const property = await prisma.property.update({
-    where: { id },
-    data: { status: statusMap[action] },
-    select: { id: true, title: true, status: true, hostId: true },
-  });
+  const { data: property } = await supabaseAdmin
+    .from("Property")
+    .update({ status: statusMap[action], updatedAt: new Date().toISOString() })
+    .eq("id", id)
+    .select("id, title, status, hostId")
+    .single();
 
-  // On first approval, seed 10 default perfect ratings (5 questions × 2 pts = 10 each)
   if (action === "approve") {
-    const existingCount = await prisma.$queryRawUnsafe<{ cnt: bigint }[]>(
-      `SELECT COUNT(*) as cnt FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true`,
-      id
-    );
-    const seededCount = Number(existingCount[0]?.cnt ?? 0);
-    if (seededCount < 10) {
+    const { count: seededCount } = await supabaseAdmin
+      .from("PropertyRating")
+      .select("*", { count: "exact", head: true })
+      .eq("propertyId", id)
+      .eq("isSeeded", true);
+
+    const needed = 10 - (seededCount || 0);
+    if (needed > 0) {
       const now = new Date();
-      const rows: unknown[] = [];
-      const placeholders: string[] = [];
-      let p = 1;
-      for (let i = seededCount; i < 10; i++) {
-        const ts = new Date(now.getTime() - i * 86400000).toISOString();
-        rows.push(randomUUID(), id, ts);
-        placeholders.push(`($${p++}, $${p++}, NULL, NULL, 10, 10, 10, 10, 10, 0, 0, 0, 0, 0, 10, true, $${p++}::timestamp)`);
-      }
-      await prisma.$queryRawUnsafe(
-        `INSERT INTO "PropertyRating" (id, "propertyId", "bookingId", "guestId", q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, "avgScore", "isSeeded", "createdAt")
-         VALUES ${placeholders.join(", ")}`,
-        ...rows
+      await supabaseAdmin.from("PropertyRating").insert(
+        Array.from({ length: needed }, (_, i) => ({
+          id: randomUUID(),
+          propertyId: id,
+          q1: 10, q2: 10, q3: 10, q4: 10, q5: 10,
+          q6: 0, q7: 0, q8: 0, q9: 0, q10: 0,
+          avgScore: 10,
+          isSeeded: true,
+          createdAt: new Date(now.getTime() - ((seededCount || 0) + i) * 86400000).toISOString(),
+        }))
       );
     }
   }

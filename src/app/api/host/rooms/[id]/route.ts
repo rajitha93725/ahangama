@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
-// PUT /api/host/rooms/[id] — update a room
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session || (session.user.role !== "HOST" && session.user.role !== "ADMIN")) {
@@ -11,17 +10,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params;
 
-  // Verify ownership via property join
-  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT r.id FROM "Room" r
-     INNER JOIN "Property" p ON p.id = r."propertyId"
-     WHERE r.id = $1 AND p."hostId" = $2`,
-    id,
-    session.user.id
-  );
-  if (!rows.length) {
-    return NextResponse.json({ error: "Room not found" }, { status: 404 });
-  }
+  const { data: hostProperties } = await supabaseAdmin.from("Property").select("id").eq("hostId", session.user.id);
+  const hostPropertyIds = (hostProperties || []).map((p: { id: string }) => p.id);
+
+  const { data: existing } = await supabaseAdmin
+    .from("Room")
+    .select("id")
+    .eq("id", id)
+    .in("propertyId", hostPropertyIds)
+    .maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Room not found" }, { status: 404 });
 
   const body = await req.json();
   const { name, description, maxGuests, isActive } = body;
@@ -30,35 +28,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Room name cannot be empty" }, { status: 400 });
   }
 
-  // Build dynamic SET clause with PostgreSQL $N placeholders
-  const updates: string[] = [];
-  const values: unknown[] = [];
+  const updateData: Record<string, unknown> = {};
+  if (name !== undefined) updateData.name = name.trim();
+  if (description !== undefined) updateData.description = description || null;
+  if (maxGuests !== undefined) updateData.maxGuests = Number(maxGuests);
+  if (isActive !== undefined) updateData.isActive = isActive;
 
-  if (name !== undefined) { values.push(name.trim()); updates.push(`name = $${values.length}`); }
-  if (description !== undefined) { values.push(description || null); updates.push(`description = $${values.length}`); }
-  if (maxGuests !== undefined) { values.push(Number(maxGuests)); updates.push(`"maxGuests" = $${values.length}`); }
-  if (isActive !== undefined) { values.push(isActive); updates.push(`"isActive" = $${values.length}`); }
-
-  if (!updates.length) {
+  if (!Object.keys(updateData).length) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
 
-  values.push(id);
-  await prisma.$queryRawUnsafe(
-    `UPDATE "Room" SET ${updates.join(", ")} WHERE id = $${values.length}`,
-    ...values
-  );
-
-  const [room] = await prisma.$queryRawUnsafe<{ id: string; propertyId: string; name: string; description: string | null; maxGuests: number; isActive: boolean }[]>(
-    `SELECT * FROM "Room" WHERE id = $1`,
-    id
-  );
-
+  const { data: room } = await supabaseAdmin.from("Room").update(updateData).eq("id", id).select().single();
   return NextResponse.json(room);
 }
 
-// DELETE /api/host/rooms/[id] — soft-delete a room
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session || (session.user.role !== "HOST" && session.user.role !== "ADMIN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -66,18 +50,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const { id } = await params;
 
-  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT r.id FROM "Room" r
-     INNER JOIN "Property" p ON p.id = r."propertyId"
-     WHERE r.id = $1 AND p."hostId" = $2`,
-    id,
-    session.user.id
-  );
-  if (!rows.length) {
-    return NextResponse.json({ error: "Room not found" }, { status: 404 });
-  }
+  const { data: hostProperties } = await supabaseAdmin.from("Property").select("id").eq("hostId", session.user.id);
+  const hostPropertyIds = (hostProperties || []).map((p: { id: string }) => p.id);
 
-  await prisma.$executeRaw`UPDATE "Room" SET "isActive" = false WHERE id = ${id}`;
+  const { data: existing } = await supabaseAdmin
+    .from("Room")
+    .select("id")
+    .eq("id", id)
+    .in("propertyId", hostPropertyIds)
+    .maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Room not found" }, { status: 404 });
 
+  await supabaseAdmin.from("Room").update({ isActive: false }).eq("id", id);
   return NextResponse.json({ success: true });
 }

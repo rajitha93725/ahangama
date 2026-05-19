@@ -1,87 +1,76 @@
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { formatCurrency } from "@/lib/utils";
 import { Users, Home, CalendarCheck, DollarSign, UserCheck, UserCog, Clock, TrendingUp } from "lucide-react";
 import Link from "next/link";
 
 export default async function AdminDashboard() {
   const [
-    guestCount,
-    hostCount,
-    activeProperties,
-    pendingProperties,
-    pendingUsers,
-    totalBookings,
-    confirmedBookings,
-    recentUsers,
-    recentPropertiesRaw,
+    { count: guestCount },
+    { count: hostCount },
+    { count: activeProperties },
+    { count: pendingProperties },
+    { count: pendingUsers },
+    { count: totalBookings },
+    { data: confirmedBookings },
+    { data: recentUsers },
+    { data: recentPropertiesRaw },
   ] = await Promise.all([
-    prisma.user.count({ where: { role: "GUEST" } }),
-    prisma.user.count({ where: { role: "HOST" } }),
-    prisma.property.count({ where: { status: "ACTIVE" } }),
-    prisma.property.count({ where: { status: "PENDING_APPROVAL" } }),
-    prisma.user.count({ where: { isActive: false, role: { not: "ADMIN" } } }),
-    prisma.booking.count(),
-    prisma.booking.findMany({
-      where: { status: { in: ["ACCEPTED", "COMPLETED"] } },
-      select: { totalPrice: true },
-    }),
-    prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 8,
-      select: { id: true, name: true, email: true, role: true, createdAt: true, isActive: true },
-    }),
-    prisma.property.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 8,
-      select: { id: true, title: true, district: true, status: true, host: { select: { name: true } } },
-    }),
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }).eq("role", "GUEST"),
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }).eq("role", "HOST"),
+    supabaseAdmin.from("Property").select("*", { count: "exact", head: true }).eq("status", "ACTIVE"),
+    supabaseAdmin.from("Property").select("*", { count: "exact", head: true }).eq("status", "PENDING_APPROVAL"),
+    supabaseAdmin.from("User").select("*", { count: "exact", head: true }).eq("isActive", false).neq("role", "ADMIN"),
+    supabaseAdmin.from("Booking").select("*", { count: "exact", head: true }),
+    supabaseAdmin.from("Booking").select("totalPrice").in("status", ["ACCEPTED", "COMPLETED"]),
+    supabaseAdmin.from("User").select("id, name, email, role, createdAt, isActive").order("createdAt", { ascending: false }).limit(8),
+    supabaseAdmin.from("Property").select("id, title, district, status, category, hostId").order("createdAt", { ascending: false }).limit(8),
   ]);
 
-  // Enrich with category via raw SQL (Prisma client doesn't know the column yet)
-  const propIds = recentPropertiesRaw.map((p) => p.id);
-  const categoryRows = propIds.length
-    ? await prisma.$queryRawUnsafe<{ id: string; category: string }[]>(
-        `SELECT id, category FROM "Property" WHERE id IN (${propIds.map((_, i) => `$${i + 1}`).join(",")})`,
-        ...propIds
-      )
-    : [];
-  const categoryMap = Object.fromEntries(categoryRows.map((r) => [r.id, r.category]));
-  const recentProperties = recentPropertiesRaw.map((p) => ({
+  const revenue = (confirmedBookings || []).reduce((s: number, b: { totalPrice: number | null }) => s + (b.totalPrice || 0), 0);
+
+  // Fetch host names for recent properties
+  const hostIds = [...new Set((recentPropertiesRaw || []).map((p: { hostId: string }) => p.hostId))];
+  const { data: hosts } = hostIds.length
+    ? await supabaseAdmin.from("User").select("id, name").in("id", hostIds)
+    : { data: [] };
+  const hostMap = Object.fromEntries((hosts || []).map((h: { id: string; name: string | null }) => [h.id, h]));
+
+  const recentProperties = (recentPropertiesRaw || []).map((p: { id: string; title: string; district: string; status: string; category: string; hostId: string }) => ({
     ...p,
-    category: categoryMap[p.id] ?? "STAY",
+    host: { name: (hostMap[p.hostId] as { name: string | null } | undefined)?.name ?? null },
   }));
 
-  const revenue = confirmedBookings.reduce((s, b) => s + (b.totalPrice || 0), 0);
+  const pending = (pendingUsers || 0) + (pendingProperties || 0);
 
   const stats = [
-    { icon: UserCheck, label: "Total Guests", value: guestCount, color: "blue", href: "/admin/users?role=GUEST" },
-    { icon: UserCog, label: "Total Hosts", value: hostCount, color: "teal", href: "/admin/users?role=HOST" },
-    { icon: Home, label: "Active Listings", value: activeProperties, color: "emerald", href: "/admin/properties" },
-    { icon: CalendarCheck, label: "Total Bookings", value: totalBookings, color: "amber", href: "/admin/bookings" },
+    { icon: UserCheck, label: "Total Guests", value: guestCount || 0, color: "blue", href: "/admin/users?role=GUEST" },
+    { icon: UserCog, label: "Total Hosts", value: hostCount || 0, color: "teal", href: "/admin/users?role=HOST" },
+    { icon: Home, label: "Active Listings", value: activeProperties || 0, color: "emerald", href: "/admin/properties" },
+    { icon: CalendarCheck, label: "Total Bookings", value: totalBookings || 0, color: "amber", href: "/admin/bookings" },
     { icon: DollarSign, label: "Confirmed Revenue", value: formatCurrency(revenue), color: "green", href: "/admin/bookings" },
-    { icon: Clock, label: "Pending Approvals", value: pendingUsers + pendingProperties, color: "orange", href: "/admin/approvals" },
-    { icon: TrendingUp, label: "Pending Properties", value: pendingProperties, color: "purple", href: "/admin/approvals" },
-    { icon: Users, label: "Inactive Users", value: pendingUsers, color: "red", href: "/admin/approvals" },
+    { icon: Clock, label: "Pending Approvals", value: pending, color: "orange", href: "/admin/approvals" },
+    { icon: TrendingUp, label: "Pending Properties", value: pendingProperties || 0, color: "purple", href: "/admin/approvals" },
+    { icon: Users, label: "Inactive Users", value: pendingUsers || 0, color: "red", href: "/admin/approvals" },
   ];
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Analytics Overview</h1>
-        {(pendingUsers + pendingProperties) > 0 && (
+        {pending > 0 && (
           <Link
             href="/admin/approvals"
             className="flex items-center gap-2 px-4 py-2 bg-orange-50 border border-orange-200 text-orange-700 rounded-xl text-sm font-medium hover:bg-orange-100 transition-colors"
           >
             <Clock className="w-4 h-4" />
-            {pendingUsers + pendingProperties} pending approvals
+            {pending} pending approvals
           </Link>
         )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
         {stats.map((s) => (
-          <Link key={s.label} href={s.href} className={`bg-white rounded-2xl border border-gray-200 p-5 hover:shadow-md transition-shadow`}>
+          <Link key={s.label} href={s.href} className="bg-white rounded-2xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
             <div className={`w-10 h-10 rounded-xl bg-${s.color}-100 flex items-center justify-center mb-3`}>
               <s.icon className={`w-5 h-5 text-${s.color}-600`} />
             </div>
@@ -92,7 +81,6 @@ export default async function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Recent Users */}
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Recent Users</h2>
@@ -108,7 +96,7 @@ export default async function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {recentUsers.map((u) => (
+                {(recentUsers || []).map((u: { id: string; name: string | null; email: string; role: string; isActive: boolean }) => (
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{u.name}</p>
@@ -131,7 +119,6 @@ export default async function AdminDashboard() {
           </div>
         </div>
 
-        {/* Recent Listings */}
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">Recent Listings</h2>
@@ -147,7 +134,7 @@ export default async function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {recentProperties.map((p) => (
+                {recentProperties.map((p: { id: string; title: string; district: string; category: string; status: string; host: { name: string | null } }) => (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900 truncate max-w-36">{p.title}</p>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export interface UnassignedBookingEntry {
   id: string;
@@ -47,7 +47,6 @@ export interface PropertyCalendarEntry {
   totalUnassigned: number;
 }
 
-// GET /api/host/calendar?date=YYYY-MM-DD&propertyId=...&source=...
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session || (session.user.role !== "HOST" && session.user.role !== "ADMIN")) {
@@ -64,18 +63,16 @@ export async function GET(req: NextRequest) {
   const dayStartIso = dayStart.toISOString();
   const dayEndIso = dayEnd.toISOString();
 
-  // 1. Fetch host's properties
-  const properties = await prisma.property.findMany({
-    where: {
-      hostId: session.user.id,
-      status: { in: ["ACTIVE", "INACTIVE", "DRAFT"] },
-      ...(propertyIdFilter ? { id: propertyIdFilter } : {}),
-    },
-    select: { id: true, title: true, district: true },
-    orderBy: { title: "asc" },
-  });
+  let propertiesQuery = supabaseAdmin
+    .from("Property")
+    .select("id, title, district, category")
+    .eq("hostId", session.user.id)
+    .in("status", ["ACTIVE", "INACTIVE", "DRAFT"])
+    .order("title");
+  if (propertyIdFilter) propertiesQuery = propertiesQuery.eq("id", propertyIdFilter);
+  const { data: properties } = await propertiesQuery;
 
-  if (!properties.length) {
+  if (!properties?.length) {
     return NextResponse.json({
       date: dateStr,
       properties: [],
@@ -83,135 +80,107 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const propertyIds = properties.map((p) => p.id);
-  const propPH = (start = 1) => propertyIds.map((_, i) => `$${start + i}`).join(",");
+  const propertyIds = (properties as { id: string }[]).map((p) => p.id);
 
-  // Fetch category for each property
-  const categoryMap: Record<string, boolean> = {};
-  if (propertyIds.length > 0) {
-    const catRows = await prisma.$queryRawUnsafe<{ id: string; category: string }[]>(
-      `SELECT id, category FROM "Property" WHERE id IN (${propPH()})`,
-      ...propertyIds
-    );
-    for (const r of catRows) categoryMap[r.id] = r.category === "TRANSPORT";
+  const [{ data: unassignedBookings }, { data: allRooms }] = await Promise.all([
+    supabaseAdmin
+      .from("Booking")
+      .select("id, propertyId, checkIn, checkOut, status, guests, guestId")
+      .in("propertyId", propertyIds)
+      .is("roomId", null)
+      .in("status", ["ACCEPTED", "COMPLETED"])
+      .lte("checkIn", dayEndIso)
+      .gt("checkOut", dayStartIso)
+      .order("checkIn"),
+    supabaseAdmin
+      .from("Room")
+      .select("id, propertyId, name, maxGuests")
+      .in("propertyId", propertyIds)
+      .eq("isActive", true)
+      .order("propertyId")
+      .order("createdAt"),
+  ]);
+
+  const roomIds = (allRooms || []).map((r: { id: string }) => r.id);
+
+  type InternalBookingRaw = { id: string; roomId: string | null; checkIn: string; checkOut: string; status: string; guestId: string };
+  type ExternalBookingRaw = { id: string; roomId: string; source: string; guestName: string | null; notes: string | null; checkIn: string; checkOut: string };
+
+  let internalBookingsRaw: InternalBookingRaw[] = [];
+  let externalBookingsRaw: ExternalBookingRaw[] = [];
+
+  if (roomIds.length > 0) {
+    let externalQuery = supabaseAdmin
+      .from("ExternalBooking")
+      .select("id, roomId, source, guestName, notes, checkIn, checkOut")
+      .in("roomId", roomIds)
+      .eq("status", "BOOKED")
+      .lte("checkIn", dayEndIso)
+      .gt("checkOut", dayStartIso);
+    if (sourceFilter) externalQuery = externalQuery.eq("source", sourceFilter);
+
+    const [{ data: internalBookings }, { data: externalBookings }] = await Promise.all([
+      supabaseAdmin
+        .from("Booking")
+        .select("id, roomId, checkIn, checkOut, status, guestId")
+        .in("roomId", roomIds)
+        .in("status", ["ACCEPTED", "COMPLETED"])
+        .lte("checkIn", dayEndIso)
+        .gt("checkOut", dayStartIso),
+      externalQuery,
+    ]);
+
+    internalBookingsRaw = (internalBookings || []) as InternalBookingRaw[];
+    externalBookingsRaw = (externalBookings || []) as ExternalBookingRaw[];
   }
 
-  // 2. Unassigned confirmed Ahangama bookings (no roomId) active on this day
-  const n = propertyIds.length;
-  const unassignedRows = await prisma.$queryRawUnsafe<
-    { id: string; propertyId: string; guestName: string; checkIn: string; checkOut: string; status: string; guests: number }[]
-  >(
-    `SELECT b.id, b."propertyId", u.name as "guestName",
-            to_char(b."checkIn" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkIn",
-            to_char(b."checkOut" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkOut",
-            b.status, b.guests
-     FROM "Booking" b
-     INNER JOIN "User" u ON u.id = b."guestId"
-     WHERE b."roomId" IS NULL
-       AND b."propertyId" IN (${propPH()})
-       AND b.status IN ('ACCEPTED', 'COMPLETED')
-       AND b."checkIn" <= $${n + 1}::timestamptz
-       AND b."checkOut" > $${n + 2}::timestamptz
-     ORDER BY b."checkIn" ASC`,
-    ...propertyIds,
-    dayEndIso,
-    dayStartIso
-  );
+  const allGuestIds = [
+    ...new Set([
+      ...(unassignedBookings || []).map((b: { guestId: string }) => b.guestId),
+      ...internalBookingsRaw.map((b) => b.guestId),
+    ].filter(Boolean)),
+  ] as string[];
 
-  // 3. Fetch all active rooms for these properties
-  const allRooms = await prisma.$queryRawUnsafe<
-    { id: string; propertyId: string; name: string; maxGuests: number }[]
-  >(
-    `SELECT id, "propertyId", name, "maxGuests" FROM "Room"
-     WHERE "propertyId" IN (${propPH()}) AND "isActive" = true
-     ORDER BY "propertyId", "createdAt" ASC`,
-    ...propertyIds
-  );
+  const { data: guestUsers } = allGuestIds.length
+    ? await supabaseAdmin.from("User").select("id, name").in("id", allGuestIds)
+    : { data: [] };
+  const guestMap = Object.fromEntries((guestUsers || []).map((u: { id: string; name: string | null }) => [u.id, u.name]));
 
-  // Build room-level data only if there are rooms
-  let internalByRoom = new Map<string, { id: string; roomId: string; guestName: string; checkIn: string; checkOut: string; status: string }>();
-  let externalByRoom = new Map<string, { id: string; roomId: string; source: string; guestName: string | null; notes: string | null; checkIn: string; checkOut: string }>();
+  const internalByRoom = new Map<string, { id: string; guestName: string; checkIn: string; checkOut: string; status: string }>();
+  const externalByRoom = new Map<string, { id: string; source: string; guestName: string | null; notes: string | null; checkIn: string; checkOut: string }>();
 
-  if (allRooms.length) {
-    const roomIds = allRooms.map((r) => r.id);
-    const m = roomIds.length;
-    const roomPH = (start = 1) => roomIds.map((_, i) => `$${start + i}`).join(",");
-
-    // 4. Room-assigned internal bookings active on this day
-    const internalBookings = await prisma.$queryRawUnsafe<
-      { id: string; roomId: string; guestName: string; checkIn: string; checkOut: string; status: string }[]
-    >(
-      `SELECT b.id, b."roomId", u.name as "guestName",
-              to_char(b."checkIn" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkIn",
-              to_char(b."checkOut" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "checkOut",
-              b.status
-       FROM "Booking" b
-       INNER JOIN "User" u ON u.id = b."guestId"
-       WHERE b."roomId" IN (${roomPH()})
-         AND b.status IN ('ACCEPTED', 'COMPLETED')
-         AND b."checkIn" <= $${m + 1}::timestamptz
-         AND b."checkOut" > $${m + 2}::timestamptz`,
-      ...roomIds,
-      dayEndIso,
-      dayStartIso
-    );
-
-    // 5. External bookings active on this day
-    let extSql = `SELECT id, "roomId", source, "guestName", notes, "checkIn", "checkOut"
-       FROM "ExternalBooking"
-       WHERE "roomId" IN (${roomPH()})
-         AND status = 'BOOKED'
-         AND "checkIn" <= $${m + 1}::timestamptz
-         AND "checkOut" > $${m + 2}::timestamptz`;
-    const extParams: unknown[] = [...roomIds, dayEndIso, dayStartIso];
-    if (sourceFilter) {
-      extSql += ` AND source = $${m + 3}`;
-      extParams.push(sourceFilter);
+  for (const b of internalBookingsRaw) {
+    if (b.roomId) {
+      internalByRoom.set(b.roomId, { id: b.id, guestName: guestMap[b.guestId] ?? "Guest", checkIn: b.checkIn, checkOut: b.checkOut, status: b.status });
     }
-
-    const externalBookings = await prisma.$queryRawUnsafe<
-      { id: string; roomId: string; source: string; guestName: string | null; notes: string | null; checkIn: string; checkOut: string }[]
-    >(extSql, ...extParams);
-
-    internalByRoom = new Map(internalBookings.map((b) => [b.roomId, b]));
-    externalByRoom = new Map(externalBookings.map((b) => [b.roomId, b]));
+  }
+  for (const b of externalBookingsRaw) {
+    externalByRoom.set(b.roomId, { id: b.id, source: b.source, guestName: b.guestName, notes: b.notes, checkIn: b.checkIn, checkOut: b.checkOut });
   }
 
-  // Group unassigned by property
   const unassignedByProperty = new Map<string, UnassignedBookingEntry[]>();
-  for (const row of unassignedRows) {
-    if (!unassignedByProperty.has(row.propertyId)) unassignedByProperty.set(row.propertyId, []);
-    unassignedByProperty.get(row.propertyId)!.push({
-      id: row.id,
-      guestName: row.guestName,
-      checkIn: row.checkIn,
-      checkOut: row.checkOut,
-      status: row.status,
-      guests: row.guests,
-    });
+  for (const b of (unassignedBookings || []) as { id: string; propertyId: string; checkIn: string; checkOut: string; status: string; guests: number; guestId: string }[]) {
+    if (!unassignedByProperty.has(b.propertyId)) unassignedByProperty.set(b.propertyId, []);
+    unassignedByProperty.get(b.propertyId)!.push({ id: b.id, guestName: guestMap[b.guestId] ?? "Guest", checkIn: b.checkIn, checkOut: b.checkOut, status: b.status, guests: b.guests });
   }
 
-  // 6. Assemble per-property calendar entries
-  let totalRooms = 0;
-  let totalInternal = 0;
-  let totalExternal = 0;
-  let totalAvailable = 0;
-  let totalUnassigned = 0;
+  let totalRooms = 0, totalInternal = 0, totalExternal = 0, totalAvailable = 0, totalUnassigned = 0;
 
-  const result: PropertyCalendarEntry[] = properties.map((property) => {
-    const rooms = allRooms.filter((r) => r.propertyId === property.id);
+  const result: PropertyCalendarEntry[] = (properties as { id: string; title: string; district: string; category: string }[]).map((property) => {
+    const rooms = (allRooms || []).filter((r: { propertyId: string }) => r.propertyId === property.id) as { id: string; name: string; maxGuests: number }[];
     const unassigned = unassignedByProperty.get(property.id) ?? [];
 
     const roomEntries: RoomCalendarEntry[] = rooms.map((room) => {
       const intBooking = internalByRoom.get(room.id) ?? null;
       const extBooking = externalByRoom.get(room.id) ?? null;
 
-      // ExternalBookings created by autoAssignRoom for multi-room Ahangama bookings
-      // use source='AHANGAMA'. Treat them as internal so they render green in the calendar.
-      const isAhangamaOverflow = extBooking?.source === "AHANGAMA";
+      // Treat as a platform booking if source is AHANGAMA, or if the notes mark it
+      // as a multi-room overflow created by autoAssignRoom (source was "OTHER" before fix).
+      const isAhangamaOverflow =
+        extBooking?.source === "AHANGAMA" ||
+        (extBooking?.source === "OTHER" && extBooking.notes?.startsWith("Linked to booking"));
       const effectiveIntBooking = intBooking ?? (isAhangamaOverflow ? {
         id: extBooking!.id,
-        roomId: extBooking!.roomId,
         guestName: extBooking!.guestName ?? "Visit Sri Lanka booking",
         checkIn: extBooking!.checkIn,
         checkOut: extBooking!.checkOut,
@@ -228,12 +197,8 @@ export async function GET(req: NextRequest) {
         name: room.name,
         maxGuests: room.maxGuests,
         status,
-        internalBooking: effectiveIntBooking
-          ? { id: effectiveIntBooking.id, guestName: effectiveIntBooking.guestName, checkIn: effectiveIntBooking.checkIn, checkOut: effectiveIntBooking.checkOut, status: effectiveIntBooking.status }
-          : null,
-        externalBooking: effectiveExtBooking
-          ? { id: effectiveExtBooking.id, source: effectiveExtBooking.source, guestName: effectiveExtBooking.guestName, notes: effectiveExtBooking.notes, checkIn: effectiveExtBooking.checkIn, checkOut: effectiveExtBooking.checkOut }
-          : null,
+        internalBooking: effectiveIntBooking ? { id: effectiveIntBooking.id, guestName: effectiveIntBooking.guestName, checkIn: effectiveIntBooking.checkIn, checkOut: effectiveIntBooking.checkOut, status: effectiveIntBooking.status } : null,
+        externalBooking: effectiveExtBooking ? { id: effectiveExtBooking.id, source: effectiveExtBooking.source, guestName: effectiveExtBooking.guestName, notes: effectiveExtBooking.notes, checkIn: effectiveExtBooking.checkIn, checkOut: effectiveExtBooking.checkOut } : null,
       };
     });
 
@@ -248,8 +213,10 @@ export async function GET(req: NextRequest) {
     totalUnassigned += unassigned.length;
 
     return {
-      ...property,
-      isTransport: categoryMap[property.id] ?? false,
+      id: property.id,
+      title: property.title,
+      district: property.district,
+      isTransport: property.category === "TRANSPORT",
       rooms: roomEntries,
       unassignedBookings: unassigned,
       totalRooms: rooms.length,
@@ -263,12 +230,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     date: dateStr,
     properties: result,
-    summary: {
-      totalRooms,
-      bookedInternal: totalInternal,
-      bookedExternal: totalExternal,
-      available: totalAvailable,
-      totalUnassigned,
-    },
+    summary: { totalRooms, bookedInternal: totalInternal, bookedExternal: totalExternal, available: totalAvailable, totalUnassigned },
   });
 }

@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(_req: NextRequest) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const notifications = await prisma.notification.findMany({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const { data: notifications } = await supabaseAdmin
+    .from("Notification")
+    .select("*")
+    .eq("userId", session.user.id)
+    .order("createdAt", { ascending: false })
+    .limit(50);
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
-  return NextResponse.json({ notifications, unreadCount });
+  const unreadCount = (notifications || []).filter((n) => !n.isRead).length;
+  return NextResponse.json({ notifications: notifications || [], unreadCount });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -21,13 +22,17 @@ export async function PATCH(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { ids } = await req.json();
-  await prisma.notification.updateMany({
-    where: {
-      userId: session.user.id,
-      ...(ids ? { id: { in: ids } } : {}),
-    },
-    data: { isRead: true },
-  });
+
+  const query = supabaseAdmin
+    .from("Notification")
+    .update({ isRead: true })
+    .eq("userId", session.user.id);
+
+  if (ids?.length) {
+    await query.in("id", ids);
+  } else {
+    await query;
+  }
 
   return NextResponse.json({ success: true });
 }

@@ -118,14 +118,30 @@ export default function BookingWidget({
     ? Object.values(roomTypeQty).reduce((s, v) => s + v, 0)
     : roomsRequested;
 
-  // Derive which meal plans all selected types share
+  const planKeys = ["priceBnB", "priceHalfBoard", "priceFullBoard"] as const;
+  const planMap = { priceBnB: "BED_BREAKFAST", priceHalfBoard: "HALF_BOARD", priceFullBoard: "FULL_BOARD" };
+
+  // Derive which meal plans are available and at what price
   const sharedMealPlans: Record<string, number | null> = availableRoomTypes
     ? (() => {
         const selected = availableRoomTypes.filter((rt) => (roomTypeQty[rt.typeId] ?? 0) > 0);
-        if (selected.length === 0) return mealPlanPrices; // fall back to property prices
+        if (selected.length === 0) {
+          // No rooms selected yet — show min prices across all available room types so guests
+          // can see which meal plans exist before they pick a room type.
+          const avail = availableRoomTypes.filter((rt) => rt.available > 0);
+          if (!avail.length) return mealPlanPrices;
+          const plans: Record<string, number | null> = {
+            ROOM_ONLY: Math.min(...avail.map((rt) => rt.pricePerNight)),
+          };
+          for (const key of planKeys) {
+            const withPlan = avail.filter((rt) => rt[key] != null);
+            plans[planMap[key]] = withPlan.length
+              ? Math.min(...withPlan.map((rt) => rt[key] as number))
+              : null;
+          }
+          return plans;
+        }
         const plans: Record<string, number | null> = { ROOM_ONLY: roomTypeSuggestedNightTotal };
-        const planKeys = ["priceBnB", "priceHalfBoard", "priceFullBoard"] as const;
-        const planMap = { priceBnB: "BED_BREAKFAST", priceHalfBoard: "HALF_BOARD", priceFullBoard: "FULL_BOARD" };
         for (const key of planKeys) {
           const allHave = selected.every((rt) => rt[key] != null);
           if (allHave) {
@@ -625,7 +641,9 @@ export default function BookingWidget({
                   <span>{m.label}</span>
                   {hasTypedRooms ? (
                     <span className={`font-semibold ${mealPlan === m.value ? "text-teal-700" : "text-gray-700"}`}>
-                      {totalRoomsSelected > 0 ? `${formatCurrency(price as number)}/night total` : "—"}
+                      {totalRoomsSelected > 0
+                        ? `${formatCurrency(price as number)}/night total`
+                        : `from ${formatCurrency(price as number)}/night`}
                     </span>
                   ) : (
                     <span className={`font-semibold ${mealPlan === m.value ? "text-teal-700" : "text-gray-700"}`}>

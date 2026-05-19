@@ -4,6 +4,7 @@ import { useState } from "react";
 import { formatCurrency, timeAgo, getInitials } from "@/lib/utils";
 import { CheckCircle, XCircle, RefreshCw, ArrowUpDown } from "lucide-react";
 import BookingStatusBadge from "./BookingStatusBadge";
+import ConfirmDialog from "@/components/admin/ConfirmDialog";
 
 interface Offer {
   id: string;
@@ -20,6 +21,7 @@ interface Props {
   offers: Offer[];
   status: string;
   nights: number;
+  checkIn: string;
   isGuest: boolean;
   isHost: boolean;
   currentUserId: string;
@@ -42,13 +44,14 @@ const OFFER_LABELS: Record<string, string> = {
 };
 
 export default function NegotiationThread({
-  bookingId, offers, status, nights, isGuest, isHost,
+  bookingId, offers, status, nights, checkIn, isGuest, isHost,
   currentUserId, onOfferSent, onStatusChange,
 }: Props) {
   const [amount, setAmount] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [pendingAction, setPendingAction] = useState<{ type: "ACCEPTANCE" | "REJECTION"; amount: number } | null>(null);
 
   const canNegotiate = ["PENDING_OFFER", "COUNTERED"].includes(status) && (isGuest || isHost);
 
@@ -80,6 +83,7 @@ export default function NegotiationThread({
       setError(e instanceof Error ? e.message : "Failed to send");
     } finally {
       setSubmitting(false);
+      setPendingAction(null);
     }
   };
 
@@ -88,8 +92,26 @@ export default function NegotiationThread({
   const isMyTurn =
     canNegotiate && !!lastOffer && lastOffer.senderId !== currentUserId;
 
+  const isAccept = pendingAction?.type === "ACCEPTANCE";
+
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        open={!!pendingAction}
+        variant={isAccept ? "approve" : "reject"}
+        title={isAccept ? "Confirm Booking" : "Decline Offer"}
+        message={
+          isAccept
+            ? `You're about to confirm this booking at ${formatCurrency(pendingAction!.amount)} total${nights > 0 ? ` (${formatCurrency(pendingAction!.amount / nights)}/night × ${nights} nights)` : ""}. This cannot be undone.`
+            : `This will permanently end all negotiations for the booking starting ${new Date(checkIn).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })}. If you'd like to adjust the price instead, cancel and use the counter offer option.`
+        }
+        confirmLabel={isAccept ? "Yes, Confirm Booking" : "Yes, Decline"}
+        loading={submitting}
+        onConfirm={() => {
+          if (pendingAction) sendOffer(pendingAction.type, pendingAction.type === "ACCEPTANCE" ? pendingAction.amount : undefined);
+        }}
+        onCancel={() => { if (!submitting) setPendingAction(null); }}
+      />
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-gray-900">Negotiation History</h3>
         <BookingStatusBadge status={status} size="sm" />
@@ -149,14 +171,14 @@ export default function NegotiationThread({
             </p>
             <div className="flex gap-2">
               <button
-                onClick={() => sendOffer("ACCEPTANCE", lastOffer.amount)}
+                onClick={() => setPendingAction({ type: "ACCEPTANCE", amount: lastOffer.amount })}
                 disabled={submitting}
                 className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
               >
                 ✓ Accept {formatCurrency(lastOffer.amount)}
               </button>
               <button
-                onClick={() => sendOffer("REJECTION")}
+                onClick={() => setPendingAction({ type: "REJECTION", amount: lastOffer.amount })}
                 disabled={submitting}
                 className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
               >

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import bcrypt from "bcryptjs";
 
 export async function POST(req: NextRequest) {
@@ -9,9 +9,10 @@ export async function POST(req: NextRequest) {
   const id = (identifier as string).trim();
   const isEmail = id.includes("@");
 
-  const user = isEmail
-    ? await prisma.user.findUnique({ where: { email: id } })
-    : await prisma.user.findFirst({ where: { phone: id } });
+  const query = supabaseAdmin.from("User").select("*");
+  const { data: user } = isEmail
+    ? await query.eq("email", id).maybeSingle()
+    : await query.eq("phone", id).maybeSingle();
 
   if (!user || !user.passwordHash) return NextResponse.json({ pending: false });
 
@@ -20,10 +21,12 @@ export async function POST(req: NextRequest) {
 
   if (user.isActive) return NextResponse.json({ pending: false });
 
-  const admin = await prisma.user.findFirst({
-    where: { role: "ADMIN", phone: { not: null } },
-    select: { phone: true },
-  });
+  const { data: admin } = await supabaseAdmin
+    .from("User")
+    .select("phone")
+    .eq("role", "ADMIN")
+    .not("phone", "is", null)
+    .maybeSingle();
 
   return NextResponse.json({ pending: true, adminPhone: admin?.phone ?? null });
 }

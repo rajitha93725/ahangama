@@ -1,16 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { ReviewSchema } from "@/lib/validations";
+import { randomUUID } from "crypto";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const reviews = await prisma.review.findMany({
-    where: { propertyId: id },
-    include: { author: { select: { id: true, name: true, image: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-  return NextResponse.json(reviews);
+  const { data: reviews } = await supabaseAdmin
+    .from("Review")
+    .select("*")
+    .eq("propertyId", id)
+    .order("createdAt", { ascending: false });
+
+  if (!reviews?.length) return NextResponse.json([]);
+
+  const authorIds = [...new Set(reviews.map((r: { authorId: string }) => r.authorId))];
+  const { data: authors } = await supabaseAdmin
+    .from("User")
+    .select("id, name, image")
+    .in("id", authorIds);
+
+  const authorMap = Object.fromEntries((authors || []).map((a: { id: string; name: string | null; image: string | null }) => [a.id, a]));
+
+  return NextResponse.json(
+    reviews.map((r: { authorId: string; [key: string]: unknown }) => ({
+      ...r,
+      author: authorMap[r.authorId] ?? { id: r.authorId, name: null, image: null },
+    }))
+  );
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -22,15 +39,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const result = ReviewSchema.safeParse(body);
   if (!result.success) return NextResponse.json({ error: result.error.flatten() }, { status: 400 });
 
-  const booking = await prisma.booking.findFirst({
-    where: {
-      propertyId,
-      guestId: session.user.id,
-      status: "COMPLETED",
-      review: null,
-    },
-    include: { property: { select: { hostId: true } } },
-  });
+  const { data: booking } = await supabaseAdmin
+    .from("Booking")
+    .select("id, propertyId, guestId")
+    .eq("propertyId", propertyId)
+    .eq("guestId", session.user.id)
+    .eq("status", "COMPLETED")
+    .is("review", null)
+    .maybeSingle();
 
   if (!booking) {
     return NextResponse.json(
@@ -39,16 +55,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     );
   }
 
-  const review = await prisma.review.create({
-    data: {
+  const { data: property } = await supabaseAdmin.from("Property").select("hostId").eq("id", propertyId).single();
+  if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const { data: review } = await supabaseAdmin
+    .from("Review")
+    .insert({
+      id: randomUUID(),
       ...result.data,
       propertyId,
       bookingId: booking.id,
       authorId: session.user.id,
-      hostId: booking.property.hostId,
-    },
-    include: { author: { select: { id: true, name: true, image: true } } },
-  });
+      hostId: property.hostId,
+    })
+    .select()
+    .single();
 
-  return NextResponse.json(review, { status: 201 });
+  const { data: author } = await supabaseAdmin.from("User").select("id, name, image").eq("id", session.user.id).single();
+
+  return NextResponse.json({ ...review, author }, { status: 201 });
 }

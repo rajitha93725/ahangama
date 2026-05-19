@@ -16,6 +16,7 @@ interface Property {
   reviewCount: number;
   propertyRating?: number | null;
   propertyRatingCount?: number | null;
+  availableRoomsTonight?: number | null;
   images: { url: string; alt?: string | null }[];
   host: { name?: string | null; image?: string | null };
 }

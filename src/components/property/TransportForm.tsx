@@ -2,10 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { TRANSPORT_TYPES, SRI_LANKA_DISTRICTS } from "@/lib/constants";
-import { Plus, Trash2, Upload, X } from "lucide-react";
+import { Plus, Trash2, Upload, X, MapPin } from "lucide-react";
 type VehicleGroup = { type: string; count: number; maxPassengers: number };
 import { useLKRRate } from "@/hooks/useLKRRate";
+
+const LocationPicker = dynamic(() => import("@/components/property/LocationPicker"), {
+  ssr: false,
+  loading: () => <div className="w-full h-[220px] rounded-xl bg-gray-100 animate-pulse" />,
+});
 
 const DISTRICT_COORDS: Record<string, [number, number]> = {
   Colombo: [6.9271, 79.8612],
@@ -53,6 +59,7 @@ export default function TransportForm() {
   const [error, setError] = useState("");
   const [images, setImages] = useState<{ url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [locationCenterKey, setLocationCenterKey] = useState(0);
 
   const [form, setForm] = useState({
     title: "",
@@ -97,6 +104,7 @@ export default function TransportForm() {
         const [lat, lng] = DISTRICT_COORDS[value as string];
         next.latitude = lat;
         next.longitude = lng;
+        setLocationCenterKey((k) => k + 1);
       }
       return next;
     });
@@ -273,6 +281,26 @@ export default function TransportForm() {
               placeholder="Where can travelers find or pick up this vehicle?"
               className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
             />
+          </div>
+
+          {/* Draggable pin map */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <MapPin className="w-4 h-4 text-amber-500" />
+              <label className="text-sm font-medium text-gray-700">Exact Pickup Location</label>
+              <span className="text-xs text-gray-400">{form.latitude.toFixed(5)}, {form.longitude.toFixed(5)}</span>
+            </div>
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <LocationPicker
+                lat={form.latitude}
+                lng={form.longitude}
+                centerKey={locationCenterKey}
+                onChange={(lat, lng) => setForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Drag the pin to your exact pickup point. Zoom in for better precision.
+            </p>
           </div>
         </div>
       )}

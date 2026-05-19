@@ -19,6 +19,19 @@ function maskName(name: string | null | undefined): string {
     return word[0].toUpperCase() + "***";
   }).join(" ");
 }
+
+const SEEDED_GUEST_NAMES = [
+  "James Hartley",
+  "Sophie Müller",
+  "Priya Sharma",
+  "David Chen",
+  "Emma Thompson",
+  "Rajan Perera",
+  "Maria Santos",
+  "Oliver Bennett",
+  "Fatima Hassan",
+  "Lucas Moreau",
+];
 import type { LucideIcon } from "lucide-react";
 
 const AMENITY_ICON_MAP: Record<string, LucideIcon> = {
@@ -77,6 +90,18 @@ export default async function PropertyDetailPage({ params }: Props) {
 
   const roomTypes: RoomType[] | null = property.roomTypes ?? null;
   const mapSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${property.longitude - 0.03},${property.latitude - 0.03},${property.longitude + 0.03},${property.latitude + 0.03}&layer=mapnik&marker=${property.latitude},${property.longitude}`;
+
+  // Derive property-level meal plan prices: use property fields if set, otherwise
+  // fall back to the minimum price across all room types so the booking widget shows
+  // B&B / HB / FB options even before the guest picks specific room types.
+  const minFromRT = (key: "priceBnB" | "priceHalfBoard" | "priceFullBoard") => {
+    if (!roomTypes?.length) return null;
+    const vals = roomTypes.map((rt) => rt[key]).filter((v): v is number => v != null);
+    return vals.length ? Math.min(...vals) : null;
+  };
+  const widgetPriceBnB = property.priceBnB ?? minFromRT("priceBnB");
+  const widgetPriceHalfBoard = property.priceHalfBoard ?? minFromRT("priceHalfBoard");
+  const widgetPriceFullBoard = property.priceFullBoard ?? minFromRT("priceFullBoard");
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -286,16 +311,19 @@ export default async function PropertyDetailPage({ params }: Props) {
                 <p className="text-xs text-gray-400 mb-4">Based on verified guest experiences</p>
                 <div className="space-y-0 divide-y divide-gray-50">
                   {/* 10 seeded entries */}
-                  {seeded.map((fb, i) => (
+                  {seeded.map((fb, i) => {
+                    const seededName = SEEDED_GUEST_NAMES[i % SEEDED_GUEST_NAMES.length];
+                    const maskedSeeded = maskName(seededName);
+                    const seededInitial = seededName[0].toUpperCase();
+                    return (
                     <div key={`s-${i}`} className="py-3">
                       <div className="flex items-center gap-3">
-                        {/* Anonymous avatar — initial only */}
                         <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-700 text-xs font-bold flex-shrink-0">
-                          V
+                          {seededInitial}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-medium text-gray-800">V*** G***</p>
+                            <p className="text-sm font-medium text-gray-800">{maskedSeeded}</p>
                             <span className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded-full text-xs font-medium">
                               <BadgeCheck className="w-3 h-3" /> Verified
                             </span>
@@ -312,7 +340,8 @@ export default async function PropertyDetailPage({ params }: Props) {
                         <p className="text-sm text-gray-600 mt-1.5 ml-11 leading-relaxed">{fb.comment}</p>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
 
                   {/* Real guest reviews — appended below seeded */}
                   {guests.length > 0 && (
@@ -370,9 +399,9 @@ export default async function PropertyDetailPage({ params }: Props) {
             maxGuests={property.maxGuests}
             category={property.category ?? "STAY"}
             pricePerKm={property.pricePerKm ?? 0}
-            priceBnB={property.priceBnB ?? null}
-            priceHalfBoard={property.priceHalfBoard ?? null}
-            priceFullBoard={property.priceFullBoard ?? null}
+            priceBnB={widgetPriceBnB}
+            priceHalfBoard={widgetPriceHalfBoard}
+            priceFullBoard={widgetPriceFullBoard}
             vehicleGroups={property.vehicleGroups ?? null}
           />
         </div>

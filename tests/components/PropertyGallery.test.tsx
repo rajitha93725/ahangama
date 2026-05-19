@@ -27,13 +27,13 @@ describe("PropertyGallery", () => {
   ];
 
   it("renders all images", () => {
-    render(<PropertyGallery images={images} />);
+    render(<PropertyGallery images={images} title="Test Property" />);
     const imgElements = screen.getAllByRole("img");
     expect(imgElements.length).toBeGreaterThanOrEqual(3);
   });
 
   it("renders placeholder text when no images", () => {
-    render(<PropertyGallery images={[]} />);
+    render(<PropertyGallery images={[]} title="Test Property" />);
     expect(screen.getByText(/no images available/i)).toBeInTheDocument();
   });
 });

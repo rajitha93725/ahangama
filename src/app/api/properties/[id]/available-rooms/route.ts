@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
-// GET /api/properties/[id]/available-rooms?checkIn=...&checkOut=...
-// Returns available room count overall, plus per-room-type breakdown if the property has types.
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -25,37 +23,54 @@ export async function GET(
   const checkInIso = checkInDate.toISOString();
   const checkOutIso = checkOutDate.toISOString();
 
-  // Get all active rooms for this property
-  const rooms = await prisma.$queryRawUnsafe<{ id: string; name: string; maxGuests: number; roomTypeId: string | null }[]>(
-    `SELECT id, name, "maxGuests", "roomTypeId" FROM "Room" WHERE "propertyId" = $1 AND "isActive" = true ORDER BY "createdAt" ASC`,
-    propertyId
-  );
+  const [{ data: rooms }, { data: roomTypes }] = await Promise.all([
+    supabaseAdmin
+      .from("Room")
+      .select("id, name, maxGuests, roomTypeId")
+      .eq("propertyId", propertyId)
+      .eq("isActive", true)
+      .order("createdAt"),
+    supabaseAdmin
+      .from("RoomType")
+      .select("id, typeName, displayLabel, roomCount, beds, maxGuests, bathrooms, amenities, pricePerNight, priceBnB, priceHalfBoard, priceFullBoard")
+      .eq("propertyId", propertyId)
+      .order("createdAt"),
+  ]);
 
-  if (rooms.length === 0) {
+  if (!rooms?.length) {
     return NextResponse.json({ availableCount: 0, totalRooms: 0, roomNames: [], roomTypes: null });
   }
 
-  // Single bulk query finds all busy rooms — replaces per-room N+1 loop
-  const allRoomIds = rooms.map((r) => r.id);
-  const inClause = allRoomIds.map((_, i) => `$${i + 1}`).join(", ");
-  const o = allRoomIds.length;
-  const busyRows = await prisma.$queryRawUnsafe<{ roomId: string }[]>(
-    `SELECT DISTINCT "roomId" FROM "ExternalBooking"
-     WHERE "roomId" IN (${inClause}) AND status = 'BOOKED'
-       AND "checkIn" < $${o + 1}::timestamptz AND "checkOut" > $${o + 2}::timestamptz
-     UNION
-     SELECT DISTINCT "roomId" FROM "Booking"
-     WHERE "roomId" IN (${inClause}) AND status IN ('ACCEPTED','COMPLETED')
-       AND "checkIn" < $${o + 1}::timestamptz AND "checkOut" > $${o + 2}::timestamptz`,
-    ...allRoomIds, checkOutIso, checkInIso
-  );
-  const busySet = new Set(busyRows.map((r) => r.roomId));
+  const allRoomIds = rooms.map((r: { id: string }) => r.id);
+
+  // Replace UNION query with two parallel queries then merge
+  const [{ data: extBusy }, { data: intBusy }] = await Promise.all([
+    supabaseAdmin
+      .from("ExternalBooking")
+      .select("roomId")
+      .in("roomId", allRoomIds)
+      .eq("status", "BOOKED")
+      .lt("checkIn", checkOutIso)
+      .gt("checkOut", checkInIso),
+    supabaseAdmin
+      .from("Booking")
+      .select("roomId")
+      .in("roomId", allRoomIds)
+      .in("status", ["ACCEPTED", "COMPLETED"])
+      .lt("checkIn", checkOutIso)
+      .gt("checkOut", checkInIso),
+  ]);
+
+  const busySet = new Set([
+    ...(extBusy || []).map((r: { roomId: string }) => r.roomId),
+    ...(intBusy || []).filter((r: { roomId: string | null }) => r.roomId).map((r: { roomId: string }) => r.roomId),
+  ]);
 
   let availableCount = 0;
   const roomNames: string[] = [];
   const availableByTypeId: Record<string, number> = {};
 
-  for (const room of rooms) {
+  for (const room of rooms as { id: string; name: string; maxGuests: number; roomTypeId: string | null }[]) {
     if (busySet.has(room.id)) continue;
     availableCount++;
     roomNames.push(room.name);
@@ -64,22 +79,8 @@ export async function GET(
     }
   }
 
-  // Fetch room types (if any) and enrich with availability
-  const roomTypeRows = await prisma.$queryRawUnsafe<{
-    id: string; typeName: string; displayLabel: string;
-    roomCount: number; beds: number; maxGuests: number; bathrooms: number;
-    amenities: string;
-    pricePerNight: number; priceBnB: number | null;
-    priceHalfBoard: number | null; priceFullBoard: number | null;
-  }[]>(
-    `SELECT id, "typeName", "displayLabel", "roomCount", beds, "maxGuests", bathrooms, amenities,
-            "pricePerNight", "priceBnB", "priceHalfBoard", "priceFullBoard"
-     FROM "RoomType" WHERE "propertyId" = $1 ORDER BY "createdAt" ASC`,
-    propertyId
-  );
-
-  const roomTypes = roomTypeRows.length > 0
-    ? roomTypeRows.map((rt) => ({
+  const enrichedRoomTypes = roomTypes?.length
+    ? (roomTypes as { id: string; typeName: string; displayLabel: string; roomCount: number; beds: number; maxGuests: number; bathrooms: number; amenities: string; pricePerNight: number; priceBnB: number | null; priceHalfBoard: number | null; priceFullBoard: number | null }[]).map((rt) => ({
         typeId: rt.id,
         typeName: rt.typeName,
         displayLabel: rt.displayLabel,
@@ -96,10 +97,5 @@ export async function GET(
       }))
     : null;
 
-  return NextResponse.json({
-    availableCount,
-    totalRooms: rooms.length,
-    roomNames,
-    roomTypes,
-  });
+  return NextResponse.json({ availableCount, totalRooms: rooms.length, roomNames, roomTypes: enrichedRoomTypes });
 }

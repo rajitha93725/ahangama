@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { randomUUID } from "crypto";
 
-// GET — return all 10 seeded rating rows individually (each guest's own scores + comment)
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,24 +13,23 @@ export async function GET(
   }
   const { id } = await params;
 
-  const rows = await prisma.$queryRawUnsafe<{
-    id: string; q1: number; q2: number; q3: number; q4: number; q5: number;
-    avgScore: number; comment: string | null; createdAt: string;
-  }[]>(
-    `SELECT id, q1, q2, q3, q4, q5, "avgScore", comment, "createdAt"
-     FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true
-     ORDER BY "createdAt" DESC`,
-    id
-  );
+  const { data: rows } = await supabaseAdmin
+    .from("PropertyRating")
+    .select("id, q1, q2, q3, q4, q5, avgScore, comment")
+    .eq("propertyId", id)
+    .eq("isSeeded", true)
+    .order("createdAt", { ascending: false });
 
-  // If fewer than 10 rows exist, pad with defaults
   const guests = Array.from({ length: 10 }, (_, i) => {
-    const row = rows[i];
+    const row = rows?.[i];
     return {
       id: row?.id ?? null,
-      q1: row?.q1 ?? 10, q2: row?.q2 ?? 10, q3: row?.q3 ?? 10,
-      q4: row?.q4 ?? 10, q5: row?.q5 ?? 10,
-      avgScore: row?.avgScore ?? 10,
+      q1: row ? Number(row.q1) : 10,
+      q2: row ? Number(row.q2) : 10,
+      q3: row ? Number(row.q3) : 10,
+      q4: row ? Number(row.q4) : 10,
+      q5: row ? Number(row.q5) : 10,
+      avgScore: row ? Number(row.avgScore) : 10,
       comment: row?.comment ?? "",
     };
   });
@@ -39,7 +37,6 @@ export async function GET(
   return NextResponse.json({ guests });
 }
 
-// PATCH — save all 10 seeded guests individually with their own scores + comments
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -66,27 +63,19 @@ export async function PATCH(
     }
   }
 
-  // Delete all existing seeded rows and re-insert with individual values
-  await prisma.$queryRawUnsafe(
-    `DELETE FROM "PropertyRating" WHERE "propertyId" = $1 AND "isSeeded" = true`,
-    id
-  );
-
   const now = new Date();
-  const rows: unknown[] = [];
-  const placeholders: string[] = [];
-  let p = 1;
-  for (let i = 0; i < 10; i++) {
-    const g = guests[i];
-    const avg = parseFloat(([g.q1, g.q2, g.q3, g.q4, g.q5].reduce((a, b) => a + b, 0) / 5).toFixed(2));
-    const ts = new Date(now.getTime() - i * 86400000).toISOString();
-    rows.push(randomUUID(), id, g.q1, g.q2, g.q3, g.q4, g.q5, avg, g.comment?.trim() || null, ts);
-    placeholders.push(`($${p++}, $${p++}, NULL, NULL, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}, 0, 0, 0, 0, 0, $${p++}, true, $${p++}, $${p++}::timestamp)`);
-  }
-  await prisma.$queryRawUnsafe(
-    `INSERT INTO "PropertyRating" (id, "propertyId", "bookingId", "guestId", q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, "avgScore", "isSeeded", comment, "createdAt")
-     VALUES ${placeholders.join(", ")}`,
-    ...rows
+  await supabaseAdmin.from("PropertyRating").delete().eq("propertyId", id).eq("isSeeded", true);
+  await supabaseAdmin.from("PropertyRating").insert(
+    guests.map((g, i) => ({
+      id: randomUUID(),
+      propertyId: id,
+      q1: g.q1, q2: g.q2, q3: g.q3, q4: g.q4, q5: g.q5,
+      q6: 0, q7: 0, q8: 0, q9: 0, q10: 0,
+      avgScore: parseFloat(([g.q1, g.q2, g.q3, g.q4, g.q5].reduce((a, b) => a + b, 0) / 5).toFixed(2)),
+      isSeeded: true,
+      comment: g.comment?.trim() || null,
+      createdAt: new Date(now.getTime() - i * 86400000).toISOString(),
+    }))
   );
 
   return NextResponse.json({ saved: 10 });

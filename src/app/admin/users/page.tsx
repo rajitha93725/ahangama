@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { Users, UserCheck, UserCog, Search } from "lucide-react";
+import ConfirmDialog, { ConfirmVariant } from "@/components/admin/ConfirmDialog";
 
 type User = {
   id: string;
@@ -15,7 +17,16 @@ type User = {
   _count: { properties: number; bookingsAsGuest: number };
 };
 
+type ConfirmState = {
+  variant: ConfirmVariant;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+};
+
 export default function AdminUsersPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const roleFilter = searchParams.get("role") || "";
   const [users, setUsers] = useState<User[]>([]);
@@ -23,6 +34,7 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState(roleFilter);
   const [actioning, setActioning] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -36,15 +48,45 @@ export default function AdminUsersPage() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  const handleAction = async (userId: string, action: string) => {
+  const runAction = async (userId: string, action: string) => {
     setActioning(userId);
+    setConfirm(null);
     await fetch(`/api/admin/users/${userId}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
     await fetchUsers();
+    router.refresh();
     setActioning(null);
+  };
+
+  const confirmAction = (u: User, action: "approve" | "activate" | "deactivate") => {
+    const label = u.name || u.email;
+    const configs: Record<typeof action, ConfirmState> = {
+      approve: {
+        variant: "approve",
+        title: "Approve Account",
+        message: `Allow ${label} to access Visit Sri Lanka as a ${u.role.toLowerCase()}.`,
+        confirmLabel: "Yes, Approve",
+        onConfirm: () => runAction(u.id, "approve"),
+      },
+      activate: {
+        variant: "activate",
+        title: "Reactivate Account",
+        message: `Restore access for ${label}. They will be able to log in again.`,
+        confirmLabel: "Yes, Activate",
+        onConfirm: () => runAction(u.id, "activate"),
+      },
+      deactivate: {
+        variant: "deactivate",
+        title: "Deactivate Account",
+        message: `Suspend ${label}'s access. They will not be able to log in until reactivated.`,
+        confirmLabel: "Yes, Deactivate",
+        onConfirm: () => runAction(u.id, "deactivate"),
+      },
+    };
+    setConfirm(configs[action]);
   };
 
   const counts = {
@@ -56,6 +98,17 @@ export default function AdminUsersPage() {
 
   return (
     <div className="p-8">
+      <ConfirmDialog
+        open={!!confirm}
+        variant={confirm?.variant ?? "approve"}
+        title={confirm?.title ?? ""}
+        message={confirm?.message ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        loading={!!actioning}
+        onConfirm={() => confirm?.onConfirm()}
+        onCancel={() => { if (!actioning) setConfirm(null); }}
+      />
+
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Users</h1>
       <p className="text-gray-500 mb-8">Manage guest and host accounts</p>
 
@@ -158,7 +211,7 @@ export default function AdminUsersPage() {
                     <div className="flex items-center justify-end gap-2">
                       {!u.isActive && (
                         <button
-                          onClick={() => handleAction(u.id, "approve")}
+                          onClick={() => confirmAction(u, "approve")}
                           disabled={actioning === u.id}
                           className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
                         >
@@ -167,7 +220,7 @@ export default function AdminUsersPage() {
                       )}
                       {u.isActive ? (
                         <button
-                          onClick={() => handleAction(u.id, "deactivate")}
+                          onClick={() => confirmAction(u, "deactivate")}
                           disabled={actioning === u.id}
                           className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
                         >
@@ -175,7 +228,7 @@ export default function AdminUsersPage() {
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleAction(u.id, "activate")}
+                          onClick={() => confirmAction(u, "activate")}
                           disabled={actioning === u.id}
                           className="px-3 py-1.5 bg-gray-50 text-gray-600 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-100 disabled:opacity-50 transition-colors"
                         >

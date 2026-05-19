@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import Link from "next/link";
 import { getInitials, formatDate } from "@/lib/utils";
 import { Edit, Star, Home, Calendar } from "lucide-react";
@@ -9,15 +9,33 @@ export default async function ProfilePage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    include: {
-      properties: { where: { status: "ACTIVE" }, include: { images: { where: { isPrimary: true }, take: 1 } }, take: 6 },
-      reviewsGiven: { select: { rating: true } },
-    },
-  });
+  const { data: user } = await supabaseAdmin
+    .from("User")
+    .select("id, name, email, image, bio, role, createdAt, isActive")
+    .eq("id", session.user.id)
+    .maybeSingle();
 
   if (!user) redirect("/login");
+
+  const [{ data: properties }, { data: reviewsGiven }] = await Promise.all([
+    supabaseAdmin.from("Property").select("id, title, status").eq("hostId", session.user.id).eq("status", "ACTIVE").limit(6),
+    supabaseAdmin.from("Review").select("rating").eq("authorId", session.user.id),
+  ]);
+
+  const propIds = (properties || []).map((p: { id: string }) => p.id);
+  const { data: propImages } = propIds.length
+    ? await supabaseAdmin.from("PropertyImage").select("propertyId, url").in("propertyId", propIds).eq("isPrimary", true)
+    : { data: [] };
+  const imageMap = Object.fromEntries((propImages || []).map((img: { propertyId: string; url: string }) => [img.propertyId, img]));
+
+  const enrichedProperties = (properties || []).map((p: { id: string; title: string; status: string }) => ({
+    ...p,
+    images: imageMap[p.id] ? [{ url: (imageMap[p.id] as { url: string }).url }] : [],
+  }));
+
+  const avgReview = (reviewsGiven || []).length > 0
+    ? ((reviewsGiven as { rating: number }[]).reduce((s, r) => s + r.rating, 0) / (reviewsGiven || []).length).toFixed(1)
+    : "—";
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -36,7 +54,7 @@ export default async function ProfilePage() {
               <p className="text-gray-500 text-sm">{user.email}</p>
               <div className="flex items-center gap-2 mt-2">
                 <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded-full text-xs font-medium">{user.role}</span>
-                <span className="text-xs text-gray-400">Joined {formatDate(user.createdAt)}</span>
+                <span className="text-xs text-gray-400">Joined {formatDate(new Date(user.createdAt))}</span>
               </div>
             </div>
           </div>
@@ -54,37 +72,27 @@ export default async function ProfilePage() {
 
         <div className="grid grid-cols-3 gap-4 mb-6 py-4 border-y border-gray-100">
           <div className="text-center">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <Calendar className="w-4 h-4 text-teal-500" />
-            </div>
-            <p className="text-lg font-bold text-gray-900">{user.properties.length}</p>
+            <div className="flex items-center justify-center gap-1 mb-1"><Calendar className="w-4 h-4 text-teal-500" /></div>
+            <p className="text-lg font-bold text-gray-900">{enrichedProperties.length}</p>
             <p className="text-xs text-gray-500">Listings</p>
           </div>
           <div className="text-center">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <Star className="w-4 h-4 text-amber-400" />
-            </div>
-            <p className="text-lg font-bold text-gray-900">
-              {user.reviewsGiven.length > 0
-                ? (user.reviewsGiven.reduce((s, r) => s + r.rating, 0) / user.reviewsGiven.length).toFixed(1)
-                : "—"}
-            </p>
+            <div className="flex items-center justify-center gap-1 mb-1"><Star className="w-4 h-4 text-amber-400" /></div>
+            <p className="text-lg font-bold text-gray-900">{avgReview}</p>
             <p className="text-xs text-gray-500">Avg Review</p>
           </div>
           <div className="text-center">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <Home className="w-4 h-4 text-teal-500" />
-            </div>
-            <p className="text-lg font-bold text-gray-900">{user.reviewsGiven.length}</p>
+            <div className="flex items-center justify-center gap-1 mb-1"><Home className="w-4 h-4 text-teal-500" /></div>
+            <p className="text-lg font-bold text-gray-900">{(reviewsGiven || []).length}</p>
             <p className="text-xs text-gray-500">Reviews</p>
           </div>
         </div>
 
-        {user.properties.length > 0 && (
+        {enrichedProperties.length > 0 && (
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-3">My Listings</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {user.properties.map((p) => (
+              {enrichedProperties.map((p) => (
                 <Link key={p.id} href={`/properties/${p.id}`} className="group block rounded-xl overflow-hidden border border-gray-100 hover:shadow-md transition-shadow">
                   <div className="aspect-video bg-gray-100 overflow-hidden">
                     {p.images[0]?.url && (
